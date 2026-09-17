@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#FFFFFF" />
+  <title>Dollar Doctrine — Multiplayer</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">$</span>
+        <span class="brand-name">DOLLAR DOCTRINE</span>
+        <span class="brand-tag">MULTIPLAYER</span>
+      </div>
+      <nav class="topnav">
+        <button data-modal="profile" class="nav-btn"><span>👤</span> Perfil</button>
+        <button data-modal="blocs" class="nav-btn"><span>🛡️</span> Blocos</button>
+        <button data-modal="pvp" class="nav-btn"><span>⚔️</span> PvP</button>
+        <button data-modal="ranking" class="nav-btn"><span>🏆</span> Ranking</button>
+        <button data-modal="market" class="nav-btn"><span>📈</span> Mercado</button>
+        <button data-modal="world" class="nav-btn"><span>🌍</span> Mundo</button>
+      </nav>
+      <div class="status">
+        <span id="online-badge" class="badge live">● 0 online</span>
+        <span id="season-badge" class="badge gold">T1</span>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section id="hero" class="hero">
+        <h1>Comece com <em>zero</em>.<br/>Termine com um <em>império</em>.</h1>
+        <p id="hero-sub">Funde sua nação, escolha seu bloco, dispute o topo global em tempo real.</p>
+        <div id="auth-panel" class="auth-panel">
+          <div class="auth-tabs">
+            <button data-auth="login" class="active">Entrar</button>
+            <button data-auth="register">Criar conta</button>
+          </div>
+          <form id="auth-form" class="auth-form" autocomplete="on">
+            <input name="username" placeholder="Nome de usuário" autocomplete="username" required minlength="3" maxlength="20" />
+            <input name="password" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password" required minlength="6" />
+            <div id="register-extra" class="hidden">
+              <input name="nationName" placeholder="Nome da sua nação" maxlength="30" />
+              <div class="doctrine-picker">
+                <label><input type="radio" name="doctrine" value="neutral" checked /><span>🕊️ Neutro</span></label>
+                <label><input type="radio" name="doctrine" value="merchant" /><span>🤝 Mercador</span></label>
+                <label><input type="radio" name="doctrine" value="raider" /><span>⚔️ Saqueador</span></label>
+              </div>
+            </div>
+            <button type="submit" class="cta-primary" id="auth-submit">Entrar</button>
+            <p id="auth-error" class="error-text"></p>
+          </form>
+        </div>
+
+        <div id="dash-panel" class="dash-panel hidden">
+          <div class="dash-grid">
+            <div class="card stat-card">
+              <div class="label">PIB</div>
+              <div class="value mono" id="dash-gdp">$0</div>
+            </div>
+            <div class="card stat-card">
+              <div class="label">Nível</div>
+              <div class="value mono" id="dash-level">0</div>
+            </div>
+            <div class="card stat-card">
+              <div class="label">Rating</div>
+              <div class="value mono" id="dash-rating">1000</div>
+            </div>
+            <div class="card stat-card">
+              <div class="label">Bloco</div>
+              <div class="value" id="dash-bloc">—</div>
+            </div>
+          </div>
+          <div class="dash-actions">
+            <a href="/game/" class="cta-primary">▶ Jogar</a>
+            <button class="cta-secondary" data-modal="pvp">⚔️ Entrar em Batalha</button>
+            <button class="cta-secondary" id="logout-btn">Sair</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="feed" class="feed hidden">
+        <h2>Feed Global</h2>
+        <ul id="feed-list" class="feed-list"></ul>
+      </section>
+    </main>
+
+    <div id="modal-host" class="modal-host hidden">
+      <div class="modal-scrim" data-close-modal></div>
+      <div class="modal-frame" id="modal-frame"></div>
+    </div>
+
+    <div id="toast-host" class="toast-host"></div>
+
+    <div id="match-overlay" class="match-overlay hidden">
+      <div class="match-box">
+        <div class="match-tag">⚔️ BATALHA EM ANDAMENTO</div>
+        <div class="match-vs">
+          <div id="match-me" class="match-side">Você</div>
+          <div class="vs">VS</div>
+          <div id="match-opp" class="match-side">—</div>
+        </div>
+        <div class="match-progress"><div id="match-bar" class="bar"></div></div>
+        <div id="match-status" class="match-status">Preparando…</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
