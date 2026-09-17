@@ -30,5 +30,16 @@ export function authMiddleware(req, res, next) {
   if (!payload) return res.status(401).json({ error: 'invalid_token' });
   req.playerId = payload.pid;
   req.username = payload.username;
+  req.userRole = payload.role || 'player';
+  next();
+}
+
+export function isAdmin(req, res, next) {
+  if (req.userRole !== 'admin') {
+    return res.status(403).json({
+      error: 'forbidden',
+      message: 'Acesso restrito para administradores.'
+    });
+  }
   next();
 }

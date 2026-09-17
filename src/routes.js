@@ -1,8 +1,27 @@
+import geoip from 'geoip-lite';
 import { createModels } from './models.js';
-import { signToken, authMiddleware } from './auth.js';
+import { signToken, authMiddleware, isAdmin } from './auth.js';
 import { createMatchmaking } from './matchmaking.js';
 import { logger } from './logger.js';
 import { AiDirector } from './game/ai_director.js';
+
+export function getClientGeo(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  let ip = forwarded ? forwarded.split(',')[0].trim() : req.socket?.remoteAddress || '';
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.replace('::ffff:', '');
+  }
+
+  let country = 'XX';
+  if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.16.')) {
+    country = 'BR'; // Ambiente de desenvolvimento local padrão
+  } else {
+    const geo = geoip.lookup(ip);
+    country = geo?.country || 'XX';
+  }
+
+  return { ip, country };
+}
 
 export function registerRoutes(app, db) {
   const models = createModels(db);
@@ -16,12 +35,27 @@ export function registerRoutes(app, db) {
   app.post('/api/auth/register', async (req, res) => {
     try {
       const p = await models.Players.create(req.body);
-      const token = signToken({ pid: p.id, username: p.username });
-      logger.net(`Registro: ${p.username}`);
+      const token = signToken({ pid: p.id, username: p.username, role: p.role });
+      const { ip, country } = getClientGeo(req);
+
+      logger.net(`Registro: ${p.username} (${country} / ${ip})`);
+
       await models.Events.log('player_joined', {
         playerId: p.id,
-        payload: { username: p.username, nation: p.nation_name }
+        payload: { username: p.username, nation: p.nation_name, country }
       });
+
+      await models.AuditLog.log({
+        event: 'register',
+        playerId: p.id,
+        username: p.username,
+        country,
+        ip,
+        level: 0,
+        gdp: 0,
+        payload: { nation: p.nation_name, doctrine: p.doctrine }
+      });
+
       res.json({ token, player: models.Players.public(p) });
     } catch (e) {
       res.status(400).json({ error: e.message });
@@ -31,7 +65,22 @@ export function registerRoutes(app, db) {
   app.post('/api/auth/login', async (req, res) => {
     try {
       const p = await models.Players.login(req.body.username, req.body.password);
-      const token = signToken({ pid: p.id, username: p.username });
+      const token = signToken({ pid: p.id, username: p.username, role: p.role });
+      const { ip, country } = getClientGeo(req);
+
+      logger.net(`Login: ${p.username} (${country} / ${ip})`);
+
+      await models.AuditLog.log({
+        event: 'login',
+        playerId: p.id,
+        username: p.username,
+        country,
+        ip,
+        level: Number(p.level) || 0,
+        gdp: Number(p.gdp) || 0,
+        payload: { rating: p.rating }
+      });
+
       res.json({ token, player: p });
     } catch (e) {
       res.status(401).json({ error: e.message });
@@ -77,6 +126,7 @@ export function registerRoutes(app, db) {
       } = req.body;
 
       const now = Date.now();
+      const currentPeak = Math.max(Number(p.peak_gdp) || 0, Number(gdp) || 0, Number(total_earned) || 0);
 
       await models.Players.updateState(p.id, {
         level,
@@ -88,7 +138,7 @@ export function registerRoutes(app, db) {
         base_multiplier,
         resets,
         total_earned,
-        peak_gdp: Math.max(Number(p.peak_gdp) || 0, Number(gdp) || 0, Number(total_earned) || 0),
+        peak_gdp: currentPeak,
         state_json: state_json ? JSON.stringify(state_json) : p.state_json,
         last_sync: now
       });
@@ -97,9 +147,47 @@ export function registerRoutes(app, db) {
         aiDirector.updatePlayerMetrics(Number(total_earned) || Number(gdp) || 0, (Number(level) || 1) * 30, Number(gdp) || 0);
       }
 
+      // Captura geográfica e registro em audit_log
+      const { ip, country } = getClientGeo(req);
+      await models.AuditLog.log({
+        event: 'sync',
+        playerId: p.id,
+        username: p.username,
+        country,
+        ip,
+        level: Number(level) || Number(p.level) || 0,
+        gdp: Number(gdp) || Number(p.gdp) || 0,
+        payload: {
+          peak_gdp: currentPeak,
+          total_earned: Number(total_earned) || 0,
+          resets: Number(resets) || 0
+        }
+      });
+
       const updated = await models.Players.byId(p.id);
       res.json({ ok: true, player: models.Players.public(updated) });
     } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── ADMIN DASHBOARD (PRIVADO) ──────────────────────
+  app.get('/api/admin/dashboard', authMiddleware, isAdmin, async (req, res) => {
+    try {
+      const byCountry = await models.AuditLog.getStatsByCountry();
+      const recentProgress = await models.AuditLog.getRecentProgress(20);
+      const totals = await models.AuditLog.getTotalStats();
+
+      res.json({
+        ok: true,
+        stats: {
+          byCountry,
+          recentProgress,
+          totals
+        }
+      });
+    } catch (e) {
+      logger.error('admin dashboard error', e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -296,6 +384,6 @@ export function registerRoutes(app, db) {
     res.json({ npcs: aiDirector.getNpcs() });
   });
 
-  logger.ok('Rotas REST registradas');
+  logger.ok('Rotas REST registradas (com auditoria e Admin Dashboard)');
   return { models, mm, aiDirector };
 }

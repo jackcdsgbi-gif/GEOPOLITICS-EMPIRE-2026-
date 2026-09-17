@@ -21,6 +21,7 @@ export async function initDb() {
     connectionTimeoutMillis: 10000
   });
 
+  // Testa conexão e cria as tabelas caso não existam
   let client;
   try {
     client = await pool.connect();
@@ -36,6 +37,8 @@ export async function initDb() {
         doctrine VARCHAR(30) DEFAULT 'neutral',
         bloc_id INTEGER,
         bloc_role VARCHAR(30) DEFAULT 'member',
+        role VARCHAR(20) DEFAULT 'player',
+        email VARCHAR(100),
         level INTEGER DEFAULT 0,
         xp DOUBLE PRECISION DEFAULT 0,
         gdp DOUBLE PRECISION DEFAULT 0,
@@ -60,10 +63,14 @@ export async function initDb() {
         pvp_blocked_until BIGINT DEFAULT 0
       );
 
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'player';
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS email VARCHAR(100);
+
       CREATE INDEX IF NOT EXISTS idx_players_rating ON players(rating DESC);
       CREATE INDEX IF NOT EXISTS idx_players_bloc ON players(bloc_id);
       CREATE INDEX IF NOT EXISTS idx_players_gdp ON players(gdp DESC);
       CREATE INDEX IF NOT EXISTS idx_players_peak ON players(peak_gdp DESC);
+      CREATE INDEX IF NOT EXISTS idx_players_role ON players(role);
 
       CREATE TABLE IF NOT EXISTS blocs (
         id SERIAL PRIMARY KEY,
@@ -134,11 +141,35 @@ export async function initDb() {
       CREATE TABLE IF NOT EXISTS audit_log (
         id SERIAL PRIMARY KEY,
         event VARCHAR(50) NOT NULL,
+        player_id INTEGER,
+        username VARCHAR(50),
+        country VARCHAR(10) DEFAULT 'XX',
+        ip VARCHAR(100),
+        level INTEGER DEFAULT 0,
+        gdp DOUBLE PRECISION DEFAULT 0,
         payload TEXT DEFAULT '{}',
         created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
       );
 
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS player_id INTEGER;
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS username VARCHAR(50);
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS country VARCHAR(10) DEFAULT 'XX';
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ip VARCHAR(100);
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 0;
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS gdp DOUBLE PRECISION DEFAULT 0;
+
       CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_country ON audit_log(country);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_player ON audit_log(player_id);
+    `);
+
+    // Atualiza permissão do administrador no banco
+    await client.query(`
+      UPDATE players
+      SET role = 'admin'
+      WHERE email = 'jackcdsgbi@gmail.com'
+         OR username = 'jackcdsgbi@gmail.com'
+         OR username = 'jackcdsgbi-gif'
     `);
 
     // Temporada ativa padrão

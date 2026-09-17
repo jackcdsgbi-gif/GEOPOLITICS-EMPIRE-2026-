@@ -5,7 +5,7 @@ export function createModels(db) {
   const raw = db.raw;
 
   const Players = {
-    async create({ username, password, nationName, nationEmoji = '🌐', doctrine = 'neutral' }) {
+    async create({ username, password, email = null, nationName, nationEmoji = '🌐', doctrine = 'neutral' }) {
       if (!username || username.length < 3 || username.length > 20) throw new Error('username_invalid');
       if (!password || password.length < 6) throw new Error('password_short');
 
@@ -17,11 +17,14 @@ export function createModels(db) {
       const season = await db.season.current();
       const seasonId = season ? Number(season.id) : 1;
 
+      const isAdminUser = email === 'jackcdsgbi@gmail.com' || username === 'jackcdsgbi@gmail.com' || username === 'jackcdsgbi-gif';
+      const role = isAdminUser ? 'admin' : 'player';
+
       const res = await raw.query(`
-        INSERT INTO players (username, password_hash, nation_name, nation_emoji, doctrine, rating, peak_rating, last_seen, created_at, season_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO players (username, password_hash, email, role, nation_name, nation_emoji, doctrine, rating, peak_rating, last_seen, created_at, season_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
-      `, [username, hash, nationName || username, nationEmoji, doctrine, config.ratingStart, config.ratingStart, now, now, seasonId]);
+      `, [username, hash, email, role, nationName || username, nationEmoji, doctrine, config.ratingStart, config.ratingStart, now, now, seasonId]);
 
       return this.public(res.rows[0]);
     },
@@ -51,7 +54,10 @@ export function createModels(db) {
     public(row) {
       if (!row) return null;
       const { password_hash, state_json, ...safe } = row;
-      return safe;
+      return {
+        ...safe,
+        role: row.role || 'player'
+      };
     },
 
     async updateState(id, patch) {
@@ -100,7 +106,7 @@ export function createModels(db) {
 
     async topByRating(limit = 100) {
       const res = await raw.query(
-        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, peak_rating, wins, losses, bloc_id, resets
+        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, peak_rating, wins, losses, bloc_id, resets, role
          FROM players
          ORDER BY rating DESC
          LIMIT $1`,
@@ -111,7 +117,7 @@ export function createModels(db) {
 
     async topByGdp(limit = 100) {
       const res = await raw.query(
-        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, wins, losses, bloc_id
+        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, wins, losses, bloc_id, role
          FROM players
          ORDER BY peak_gdp DESC
          LIMIT $1`,
@@ -176,7 +182,7 @@ export function createModels(db) {
 
     async members(blocId) {
       const res = await raw.query(
-        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, bloc_role, last_seen
+        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, bloc_role, last_seen, role
          FROM players
          WHERE bloc_id = $1
          ORDER BY gdp DESC`,
@@ -284,11 +290,59 @@ export function createModels(db) {
   };
 
   const AuditLog = {
-    async log(event, payload = {}) {
-      await raw.query(
-        'INSERT INTO audit_log (event, payload) VALUES ($1, $2)',
-        [event, JSON.stringify(payload)]
-      );
+    async log({ event, playerId = null, username = null, country = 'XX', ip = null, level = 0, gdp = 0, payload = {} }) {
+      try {
+        await raw.query(`
+          INSERT INTO audit_log (event, player_id, username, country, ip, level, gdp, payload, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
+          event,
+          playerId ? Number(playerId) : null,
+          username || null,
+          country || 'XX',
+          ip || null,
+          Number(level) || 0,
+          Number(gdp) || 0,
+          JSON.stringify(payload || {}),
+          Date.now()
+        ]);
+      } catch (e) {
+        // Non-blocking log insertion error
+      }
+    },
+
+    async getStatsByCountry() {
+      const res = await raw.query(`
+        SELECT
+          country,
+          COUNT(*) AS total_accesses,
+          COUNT(DISTINCT player_id) AS unique_players,
+          MAX(created_at) AS last_seen
+        FROM audit_log
+        WHERE country IS NOT NULL AND country != ''
+        GROUP BY country
+        ORDER BY total_accesses DESC
+      `);
+      return res.rows;
+    },
+
+    async getRecentProgress(limit = 20) {
+      const res = await raw.query(`
+        SELECT id, event, player_id, username, country, ip, level, gdp, payload, created_at
+        FROM audit_log
+        ORDER BY created_at DESC
+        LIMIT $1
+      `, [Number(limit)]);
+      return res.rows;
+    },
+
+    async getTotalStats() {
+      const totalLogsRes = await raw.query('SELECT COUNT(*) AS c FROM audit_log');
+      const totalCountriesRes = await raw.query("SELECT COUNT(DISTINCT country) AS c FROM audit_log WHERE country IS NOT NULL AND country != 'XX'");
+      return {
+        totalLogs: Number(totalLogsRes.rows[0]?.c || 0),
+        totalCountries: Number(totalCountriesRes.rows[0]?.c || 0)
+      };
     }
   };
 

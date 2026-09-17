@@ -56,6 +56,9 @@ app.get('/api/health', async (_req, res) =>
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
   if (req.path.startsWith('/game')) return next();
+  if (req.path === '/admin' || req.path.startsWith('/admin/')) {
+    return res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
