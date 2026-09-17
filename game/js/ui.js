@@ -608,16 +608,168 @@ class MasterUI {
   }
 
   // ─────────────────────────────────────
-  // SPARKLINE
+  // SPARKLINE & ECONOMY CHART (CHART.JS)
   // ─────────────────────────────────────
+  getChartOptions(isDarkMode, type = 'sparkline') {
+    const textColor = isDarkMode ? '#94A3B8' : '#0F172A';
+    const gridColor = isDarkMode ? '#1E293B' : '#E2E8F0';
+
+    if (type === 'sparkline') {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: (ctx) => `Tesouro: ${window.engine ? window.engine.fmt(ctx.raw) : '$' + ctx.raw}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            display: false,
+            grid: { display: false }
+          },
+          y: {
+            display: true,
+            position: 'right',
+            grid: {
+              color: gridColor,
+              drawBorder: false
+            },
+            ticks: {
+              color: textColor,
+              font: { family: 'JetBrains Mono', size: 9 },
+              callback: (val) => window.engine ? window.engine.fmt(val) : '$' + val,
+              maxTicksLimit: 3
+            }
+          }
+        }
+      };
+    }
+
+    if (type === 'doughnut') {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { color: textColor, font: { family: 'Outfit', size: 12 } }
+          }
+        }
+      };
+    }
+
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: textColor, font: { family: 'JetBrains Mono', size: 11 } }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: gridColor },
+          ticks: { color: textColor, font: { family: 'JetBrains Mono', size: 11 } }
+        }
+      },
+      plugins: {
+        legend: {
+          labels: { color: textColor, font: { family: 'Outfit', size: 12 } }
+        }
+      }
+    };
+  }
+
+  _getEconomyGradient(ctx, isDarkMode) {
+    const grad = ctx.createLinearGradient(0, 0, 0, 75);
+    if (isDarkMode) {
+      grad.addColorStop(0, 'rgba(0, 255, 102, 0.35)');
+      grad.addColorStop(0.7, 'rgba(0, 255, 102, 0.08)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    } else {
+      grad.addColorStop(0, 'rgba(5, 150, 105, 0.28)');
+      grad.addColorStop(0.7, 'rgba(5, 150, 105, 0.08)');
+      grad.addColorStop(1, 'rgba(5, 150, 105, 0.0)');
+    }
+    return grad;
+  }
+
+  _initEconomyChart() {
+    const canvas = document.getElementById('sparkline');
+    if (!canvas || !window.Chart) return;
+
+    const isDarkMode = !document.body.classList.contains('light-theme');
+    const pibLineColor = isDarkMode ? '#00FF66' : '#059669';
+    const ctx = canvas.getContext('2d');
+    const grad = this._getEconomyGradient(ctx, isDarkMode);
+    const data = [...this.sparkHistory];
+    const labels = data.map(() => '');
+
+    window.economyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data,
+          borderColor: pibLineColor,
+          borderWidth: 2.2,
+          backgroundColor: grad,
+          fill: true,
+          tension: 0.35,
+          pointRadius: (context) => (context.dataIndex === context.dataset.data.length - 1 ? 4 : 0),
+          pointHoverRadius: 6,
+          pointBackgroundColor: pibLineColor,
+          pointBorderColor: '#FFFFFF',
+          pointBorderWidth: 1.5
+        }]
+      },
+      options: this.getChartOptions(isDarkMode, 'sparkline')
+    });
+  }
+
   _tickSparkline() {
-    const s = window.engine.state;
-    this.sparkHistory.push(s.balance);
+    const s = window.engine ? window.engine.state : {};
+    this.sparkHistory.push(s.balance || 0);
     if (this.sparkHistory.length > 30) this.sparkHistory.shift();
     this._drawSparkline();
   }
 
   _drawSparkline() {
+    const canvas = document.getElementById('sparkline');
+    if (!canvas) return;
+
+    if (window.Chart) {
+      if (!window.economyChart) {
+        this._initEconomyChart();
+      }
+      if (window.economyChart) {
+        window.economyChart.data.labels = this.sparkHistory.map(() => '');
+        window.economyChart.data.datasets[0].data = [...this.sparkHistory];
+        window.economyChart.update('none');
+      }
+    } else {
+      this._drawSparklineCanvasFallback();
+    }
+
+    // Trend pill com taxa real por segundo
+    const s = window.engine ? window.engine.state : {};
+    const netFlowPerSec = ((s.gdpPerHour || 0) / 3600);
+    const data = this.sparkHistory;
+    const trend = data.length >= 2 ? (data[data.length - 1] >= data[0]) : true;
+    const trendEl = document.getElementById('sparkline-trend');
+    if (trendEl && window.engine) {
+      trendEl.textContent = (trend ? '▲ +' : '▼ -') + window.engine.fmt(Math.abs(netFlowPerSec)) + '/s';
+      trendEl.className = trend ? 'pill pill-green' : 'pill pill-red';
+    }
+  }
+
+  _drawSparklineCanvasFallback() {
     const canvas = document.getElementById('sparkline');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -628,10 +780,13 @@ class MasterUI {
     const data = this.sparkHistory;
     if (data.length < 2) return;
 
+    const isDarkMode = !document.body.classList.contains('light-theme');
+    const pibLineColor = isDarkMode ? '#00FF66' : '#059669';
+
     ctx.clearRect(0, 0, W, H);
 
     // Linhas de grade sutis
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.strokeStyle = isDarkMode ? '#1E293B' : '#E2E8F0';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     [0.25, 0.5, 0.75].forEach(r => {
@@ -651,11 +806,17 @@ class MasterUI {
       y: H - ((v - min) / range) * (H - 16) - 8
     }));
 
-    // Gradient fill neon
+    // Preenchimento gradiente
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, 'rgba(0,255,136,0.35)');
-    grad.addColorStop(0.6, 'rgba(0,255,136,0.10)');
-    grad.addColorStop(1, 'rgba(0,255,136,0)');
+    if (isDarkMode) {
+      grad.addColorStop(0, 'rgba(0,255,102,0.35)');
+      grad.addColorStop(0.6, 'rgba(0,255,102,0.10)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+    } else {
+      grad.addColorStop(0, 'rgba(5,150,105,0.28)');
+      grad.addColorStop(0.6, 'rgba(5,150,105,0.08)');
+      grad.addColorStop(1, 'rgba(5,150,105,0)');
+    }
 
     ctx.beginPath();
     ctx.moveTo(pts[0].x, H);
@@ -665,37 +826,23 @@ class MasterUI {
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Linha principal brilhante com sombra
-    ctx.save();
-    ctx.shadowColor = '#00FF88';
-    ctx.shadowBlur = 6;
+    // Linha principal brilhante
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     pts.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.strokeStyle = '#00FF88';
-    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = pibLineColor;
+    ctx.lineWidth = 2.2;
     ctx.stroke();
-    ctx.restore();
 
-    // Ponto pulsante no final
+    // Ponto final
     const last = pts[pts.length - 1];
     ctx.beginPath();
-    ctx.arc(last.x, last.y, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#00FF88';
+    ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = pibLineColor;
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-
-    // Trend pill com taxa real por segundo
-    const s = window.engine.state;
-    const netFlowPerSec = (s.gdpPerHour || 0) / 3600;
-    const trend = data[data.length - 1] >= data[0];
-    const trendEl = document.getElementById('sparkline-trend');
-    if (trendEl) {
-      trendEl.textContent = (trend ? '▲ +' : '▼ -') + window.engine.fmt(Math.abs(netFlowPerSec)) + '/s';
-      trendEl.className = trend ? 'pill pill-green' : 'pill pill-red';
-    }
   }
 
   // ─────────────────────────────────────
@@ -3335,22 +3482,87 @@ class MasterUI {
   // TEMA VISUAL (CLARO / ESCURO)
   // ─────────────────────────────────────
   _initTheme() {
-    const saved = localStorage.getItem('geo_theme') || window.engine.state.theme || 'dark';
+    const saved = localStorage.getItem('geo_theme') || (window.engine?.state?.theme) || 'dark';
     const isLight = saved === 'light';
     document.body.classList.toggle('light-theme', isLight);
     document.documentElement.classList.toggle('light-theme', isLight);
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) btn.textContent = isLight ? '☀️' : '🌙';
+    this.updateChartsTheme(!isLight);
   }
 
   toggleTheme() {
     const isLight = document.body.classList.toggle('light-theme');
     document.documentElement.classList.toggle('light-theme', isLight);
+    const isDarkMode = !isLight;
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) btn.textContent = isLight ? '☀️' : '🌙';
     this._setSetting('theme', isLight ? 'light' : 'dark');
     try { localStorage.setItem('geo_theme', isLight ? 'light' : 'dark'); } catch(e){}
     this.showToast(isLight ? '☀️ Modo Claro Ativado!' : '🌙 Modo Escuro Ativado!', 'info');
+
+    // Atualiza gráficos do Chart.js dinamicamente sem recarregar ou perder dados
+    this.updateChartsTheme(isDarkMode);
+    window.dispatchEvent(new CustomEvent('themeChanged', { detail: { isDarkMode } }));
+  }
+
+  updateChartsTheme(isDarkMode) {
+    const textColor = isDarkMode ? '#94A3B8' : '#0F172A';
+    const gridColor = isDarkMode ? '#1E293B' : '#E2E8F0';
+    const pibLineColor = isDarkMode ? '#00FF66' : '#059669';
+
+    // 1. economyChart (Gráfico de PIB / Tesouro)
+    if (window.economyChart) {
+      if (window.economyChart.options?.scales?.y) {
+        window.economyChart.options.scales.y.grid.color = gridColor;
+        window.economyChart.options.scales.y.ticks.color = textColor;
+      }
+      if (window.economyChart.options?.scales?.x) {
+        window.economyChart.options.scales.x.grid.color = gridColor;
+        window.economyChart.options.scales.x.ticks.color = textColor;
+      }
+      if (window.economyChart.data?.datasets?.[0]) {
+        const ctx = window.economyChart.ctx;
+        window.economyChart.data.datasets[0].borderColor = pibLineColor;
+        window.economyChart.data.datasets[0].pointBackgroundColor = pibLineColor;
+        window.economyChart.data.datasets[0].backgroundColor = this._getEconomyGradient(ctx, isDarkMode);
+      }
+      window.economyChart.update();
+    }
+
+    // 2. countryChart (se ativo)
+    if (window.countryChart) {
+      if (window.countryChart.options?.plugins?.legend?.labels) {
+        window.countryChart.options.plugins.legend.labels.color = textColor;
+      }
+      if (window.countryChart.data?.datasets?.[0]) {
+        window.countryChart.data.datasets[0].borderColor = isDarkMode ? '#0B1120' : '#FFFFFF';
+      }
+      window.countryChart.update();
+    }
+
+    // 3. trafficChart (se ativo)
+    if (window.trafficChart) {
+      if (window.trafficChart.options?.scales?.x) {
+        window.trafficChart.options.scales.x.grid.color = gridColor;
+        window.trafficChart.options.scales.x.ticks.color = textColor;
+      }
+      if (window.trafficChart.options?.scales?.y) {
+        window.trafficChart.options.scales.y.grid.color = gridColor;
+        window.trafficChart.options.scales.y.ticks.color = textColor;
+      }
+      if (window.trafficChart.data?.datasets?.[0]) {
+        const trafficColor = isDarkMode ? '#38BDF8' : '#0284C7';
+        window.trafficChart.data.datasets[0].borderColor = trafficColor;
+        window.trafficChart.data.datasets[0].pointBackgroundColor = trafficColor;
+      }
+      window.trafficChart.update();
+    }
+
+    // Também redesenha o canvas fallback se Chart.js não estiver ativo
+    if (!window.Chart) {
+      this._drawSparkline();
+    }
   }
 
   // ─────────────────────────────────────
@@ -4767,5 +4979,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // Pequeño delay para garantir que engine está pronto
   setTimeout(() => {
     window.ui = new MasterUI();
+    window.getChartOptions = (isDarkMode, type) => window.ui ? window.ui.getChartOptions(isDarkMode, type) : null;
   }, 100);
 });
