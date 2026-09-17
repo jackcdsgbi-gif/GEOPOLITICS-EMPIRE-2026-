@@ -2250,6 +2250,29 @@ class GameEngine {
     return { ok: true, msg: `📢 Pronunciamento em Cadeia Nacional realizado! (+8% Estabilidade, +12% Aprovação Popular)` };
   }
 
+  investInRegion(regionId, amount = 10000, xpGain = 250, infGain = 50) {
+    const s = this.state;
+    if ((s.balance || 0) < amount) {
+      if (window.ui?.showToast) window.ui.showToast(`❌ Saldo insuficiente ($${this.fmt(amount)} necessário).`, 'error');
+      return false;
+    }
+    s.balance -= amount;
+    this._addXp(xpGain);
+    s.influence = (s.influence || 0) + infGain;
+    s.powerScore = (s.powerScore || 0) + (infGain * 0.5);
+
+    if (!s.regionalInvestments) s.regionalInvestments = {};
+    s.regionalInvestments[regionId] = (s.regionalInvestments[regionId] || 0) + amount;
+
+    if (this.sound && typeof this.sound.build === 'function') this.sound.build();
+    this._save();
+    this.notify('investRegion', { regionId, amount, xpGain, infGain });
+    if (window.ui?.showToast) {
+      window.ui.showToast(`🏛️ Investimento de $${this.fmt(amount)} alocado com sucesso! (+${xpGain} XP, +${infGain} Influência)`, 'success');
+    }
+    return true;
+  }
+
   // ──────────────────────────────────────
   // XP PROGRESS
   // ──────────────────────────────────────

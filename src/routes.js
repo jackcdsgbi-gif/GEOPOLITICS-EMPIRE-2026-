@@ -552,13 +552,141 @@ export function registerRoutes(app, db) {
     }
   });
 
-  // ─── AI DIRECTOR FEED ────────────────────────────────
-  app.get('/api/ai/feed', (_req, res) => {
-    res.json({ events: aiDirector.getFeed(50) });
-  });
+  // ─── GEOPOLITICAL REGION OPERATIONS ─────────────────
+  const REGION_META = {
+    sa: { id: 'sa', name: 'América do Sul', flag: '🐆', continentKey: 'South America', blocPreset: 'Aliança do Pacífico', doctrine: 'Agro & Recursos Estratégicos', defaultLeader: 'Soberano do Sul' },
+    na: { id: 'na', name: 'América do Norte', flag: '🦅', continentKey: 'North America', blocPreset: 'Coalizão dos Cinco', doctrine: 'Capital & Aeroespacial', defaultLeader: 'Alto Comando do Norte' },
+    eu: { id: 'eu', name: 'Europa', flag: '🏰', continentKey: 'Europe', blocPreset: 'União Atlântica', doctrine: 'Tech & Finanças Globais', defaultLeader: 'Presidência Comunitária' },
+    af: { id: 'af', name: 'África', flag: '🌍', continentKey: 'Africa', blocPreset: 'Cartel Energético', doctrine: 'Minérios Críticos & Energia Solar', defaultLeader: 'Federação Pan-Africana' },
+    me: { id: 'me', name: 'Oriente', flag: '🕌', continentKey: 'Middle East', blocPreset: 'Cartel Energético', doctrine: 'Petróleo & Fundos Soberanos', defaultLeader: 'Consórcio de Petrodólares' },
+    asia: { id: 'asia', name: 'Eurásia & Ásia', flag: '🐉', continentKey: 'Asia', blocPreset: 'Federação Emergente', doctrine: 'Indústria Pesada & Semicondutores', defaultLeader: 'Poder Central Euroasiático' },
+    sea: { id: 'sea', name: 'ASEAN', flag: '🌴', continentKey: 'Asia', blocPreset: 'Consórcio de Terras Raras', doctrine: 'Cadeia de Suprimentos & Lítio', defaultLeader: 'Liga de Comércio Marítimo' },
+    pac: { id: 'pac', name: 'Oceania', flag: '🌊', continentKey: 'Oceania', blocPreset: 'Aliança do Pacífico', doctrine: 'Logística & Soberania Marítima', defaultLeader: 'Comando do Pacífico Sul' }
+  };
 
-  app.get('/api/ai/npcs', (_req, res) => {
-    res.json({ npcs: aiDirector.getNpcs() });
+  app.get('/api/geo/region/:id', async (req, res) => {
+    try {
+      const regionId = String(req.params.id).toLowerCase();
+      const meta = REGION_META[regionId] || REGION_META.sa;
+
+      // 1. Jogadores no PostgreSQL associados à região
+      const playersRes = await db.raw.query(`
+        SELECT id, username, nation_name, nation_emoji, level, rating, gdp, peak_gdp, continent, doctrine, bloc_id
+        FROM players
+        WHERE continent = $1 OR continent = $2
+        ORDER BY rating DESC, gdp DESC
+        LIMIT 40
+      `, [meta.continentKey, meta.name]);
+
+      const players = playersRes.rows || [];
+      const sovereign = players[0] || {
+        username: meta.defaultLeader,
+        nation_name: meta.name,
+        nation_emoji: meta.flag,
+        rating: 1250,
+        level: 15,
+        gdp: 50000000
+      };
+
+      // 2. Cálculo do PIB acumulado da região
+      const rawGdpSum = players.reduce((sum, p) => sum + (Number(p.gdp) || 0), 0);
+      const baselineGdp = 250_000_000;
+      const totalGdp = rawGdpSum > 0 ? (rawGdpSum + baselineGdp) : (baselineGdp * 1.5);
+
+      // 3. Tensão militar baseada em partidas recentes
+      const matchesRes = await db.raw.query(`
+        SELECT id, attacker_id, defender_id, status, created_at, stolen_gdp
+        FROM matches
+        WHERE created_at > $1
+        ORDER BY created_at DESC
+        LIMIT 10
+      `, [Date.now() - 24 * 3600_000]);
+
+      const recentMatches = matchesRes.rows || [];
+      const matchCount = recentMatches.length;
+      let tension = 'Baixa (DEFCON 5)';
+      let tensionPill = 'pill-green';
+      if (matchCount > 15) {
+        tension = 'Guerra Iminente (DEFCON 1)';
+        tensionPill = 'pill-red';
+      } else if (matchCount > 6) {
+        tension = 'Elevada (DEFCON 2)';
+        tensionPill = 'pill-red';
+      } else if (matchCount > 2) {
+        tension = 'Moderada (DEFCON 3)';
+        tensionPill = 'pill-yellow';
+      }
+
+      // 4. Jogadores em fila de matchmaking
+      const queuedList = [];
+      if (mm?.queue) {
+        for (const entry of mm.queue.values()) {
+          queuedList.push({
+            playerId: entry.playerId,
+            rating: entry.rating,
+            joinedAt: entry.joinedAt
+          });
+        }
+      }
+
+      // 5. Últimos eventos geopolíticos da IA para a região
+      const allAiEvents = aiDirector ? aiDirector.getFeed(40) : [];
+      const regionTerms = [meta.name.toLowerCase(), meta.flag, meta.continentKey.toLowerCase(), regionId];
+      const regionAiEvents = allAiEvents.filter(ev => {
+        const text = `${ev.actor || ''} ${ev.headline || ''} ${ev.details || ''}`.toLowerCase();
+        return regionTerms.some(term => text.includes(term));
+      }).slice(0, 5);
+
+      // Bônus continental ativo
+      const { bonus } = getContinentDetails(meta.continentKey);
+
+      res.json({
+        ok: true,
+        region: {
+          id: meta.id,
+          name: meta.name,
+          flag: meta.flag,
+          doctrine: meta.doctrine,
+          blocName: meta.blocPreset,
+          sovereignLeader: sovereign.username,
+          sovereignNation: sovereign.nation_name || meta.name,
+          sovereignEmoji: sovereign.nation_emoji || meta.flag,
+          tension,
+          tensionPill
+        },
+        economy: {
+          totalGdp,
+          playersCount: players.length,
+          bonusBadge: bonus.badge,
+          bonusLabel: bonus.label,
+          investmentTiers: [
+            { id: 'tier_1', name: 'Incentivo Setorial', cost: 10000, xp: 250, influence: 50 },
+            { id: 'tier_2', name: 'Complexo Logístico', cost: 50000, xp: 1500, influence: 300 },
+            { id: 'tier_3', name: 'Fundo de Hegemonia', cost: 250000, xp: 8000, influence: 1800 }
+          ]
+        },
+        military: {
+          tension,
+          activeBattles: recentMatches.slice(0, 4),
+          queuedPlayers: queuedList.slice(0, 6)
+        },
+        intelligence: {
+          stability: Math.max(78, 100 - (matchCount * 2)),
+          players: players.map(p => ({
+            id: p.id,
+            username: p.username,
+            nation: p.nation_name,
+            emoji: p.nation_emoji,
+            rating: p.rating,
+            level: p.level,
+            doctrine: p.doctrine
+          }))
+        },
+        aiDirectives: regionAiEvents.length > 0 ? regionAiEvents : allAiEvents.slice(0, 5)
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   logger.ok('Rotas REST registradas (Central de Comando Live Ops & Moderação Ativa)');

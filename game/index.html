@@ -6,6 +6,11 @@
   <meta name="description" content="Geopolitics Empire 2026 — Construa uma nação do zero. Do $0 ao domínio global.">
   <title>Geopolitics Empire 2026 — The Dollar Doctrine</title>
   <link rel="stylesheet" href="css/style.css">
+  <!-- Leaflet.js Official CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Socket.io Real-Time Client -->
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body class="light-theme">
 
@@ -816,123 +821,7 @@
           <div class="card-title">🌍 Mapa-Múndi Geopolítico 2026</div>
           <div class="pill pill-blue" id="world-tension">Tensão: Baixa</div>
         </div>
-        <div class="world-map-svg-wrap">
-          <svg id="world-svg" viewBox="0 0 420 230" style="background:radial-gradient(ellipse at center, #0b1528 0%, #030712 100%);">
-            <defs>
-              <!-- Geopolitical glows -->
-              <filter id="geo-glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="2" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-              <!-- Gradient styles for continents -->
-              <linearGradient id="grad-na" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1b4332"/><stop offset="100%" stop-color="#081c15"/></linearGradient>
-              <linearGradient id="grad-sa" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#14532d"/><stop offset="100%" stop-color="#052e16"/></linearGradient>
-              <linearGradient id="grad-eu" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1e3a8a"/><stop offset="100%" stop-color="#0f172a"/></linearGradient>
-              <linearGradient id="grad-af" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#713f12"/><stop offset="100%" stop-color="#2a1205"/></linearGradient>
-              <linearGradient id="grad-asia" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#581c87"/><stop offset="100%" stop-color="#1e1035"/></linearGradient>
-              <linearGradient id="grad-me" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#881337"/><stop offset="100%" stop-color="#2a060f"/></linearGradient>
-              <linearGradient id="grad-sea" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0e7490"/><stop offset="100%" stop-color="#042f2e"/></linearGradient>
-              <linearGradient id="grad-ant" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#334155"/><stop offset="100%" stop-color="#0f172a"/></linearGradient>
-            </defs>
-
-            <!-- Latitude & Longitude Geopolitical Grid Lines -->
-            <g class="world-grid-lines" stroke="rgba(56, 189, 248, 0.08)" stroke-width="0.5" stroke-dasharray="2 3">
-              <line x1="0" y1="45" x2="420" y2="45" />
-              <line x1="0" y1="95" x2="420" y2="95" />
-              <line x1="0" y1="145" x2="420" y2="145" />
-              <line x1="0" y1="195" x2="420" y2="195" />
-              <line x1="70" y1="0" x2="70" y2="230" />
-              <line x1="140" y1="0" x2="140" y2="230" />
-              <line x1="210" y1="0" x2="210" y2="230" />
-              <line x1="280" y1="0" x2="280" y2="230" />
-              <line x1="350" y1="0" x2="350" y2="230" />
-            </g>
-
-            <!-- Animated Global Trade & Energy Corridors -->
-            <g class="trade-corridors" stroke="rgba(0, 255, 136, 0.35)" stroke-width="1" fill="none" stroke-dasharray="3 4">
-              <!-- Rota Atlântica: América do Sul -> Europa -->
-              <path d="M 95 125 Q 120 70 175 42">
-                <animate attributeName="stroke-dashoffset" values="28;0" dur="4s" repeatCount="indefinite"/>
-              </path>
-              <!-- Rota Transpacífico: Ásia -> América do Norte -->
-              <path d="M 285 55 Q 360 20 55 35" stroke="rgba(59, 130, 246, 0.35)">
-                <animate attributeName="stroke-dashoffset" values="32;0" dur="5s" repeatCount="indefinite"/>
-              </path>
-              <!-- Rota do Índico: Golfo / África -> Sudeste Asiático -->
-              <path d="M 235 105 Q 280 120 340 125" stroke="rgba(250, 204, 21, 0.35)">
-                <animate attributeName="stroke-dashoffset" values="24;0" dur="3.5s" repeatCount="indefinite"/>
-              </path>
-            </g>
-
-            <!-- 1. AMÉRICA DO NORTE (na) -->
-            <path id="region-na" class="world-region modern-continent" data-region="na" onclick="ui.openRegion('na')"
-                  d="M 20 22 C 32 12, 60 14, 85 24 C 95 28, 92 48, 88 58 C 76 66, 68 76, 52 82 C 45 80, 42 66, 30 58 C 22 52, 14 36, 20 22 Z
-                     M 68 8 C 78 5, 90 9, 86 16 C 80 19, 70 16, 68 8 Z"
-                  fill="url(#grad-na)" stroke="#00FF88" stroke-width="0.8" />
-            <text x="56" y="50" text-anchor="middle" fill="#A7F3D0" font-size="8" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🇺🇸 AMÉRICA DO NORTE</text>
-
-            <!-- 2. AMÉRICA DO SUL (sa) -->
-            <path id="region-sa" class="world-region modern-continent" data-region="sa" onclick="ui.openRegion('sa')"
-                  d="M 55 96 C 72 92, 94 102, 102 118 C 105 132, 96 150, 84 165 C 74 175, 68 184, 62 192 C 58 186, 55 160, 54 140 C 50 125, 48 108, 55 96 Z"
-                  fill="url(#grad-sa)" stroke="#4ADE80" stroke-width="0.8" />
-            <text x="76" y="142" text-anchor="middle" fill="#86EFAC" font-size="8" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🇧🇷 AMÉRICA DO SUL</text>
-
-            <!-- 3. EUROPA (eu) -->
-            <path id="region-eu" class="world-region modern-continent" data-region="eu" onclick="ui.openRegion('eu')"
-                  d="M 145 20 C 160 14, 185 18, 196 26 C 198 38, 190 52, 180 58 C 168 62, 152 64, 142 56 C 138 48, 138 32, 145 20 Z
-                     M 132 25 C 138 22, 142 28, 138 34 C 132 35, 128 30, 132 25 Z"
-                  fill="url(#grad-eu)" stroke="#3B82F6" stroke-width="0.8" />
-            <text x="168" y="42" text-anchor="middle" fill="#93C5FD" font-size="8" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🇪🇺 EUROPA</text>
-
-            <!-- 4. ÁFRICA (af) -->
-            <path id="region-af" class="world-region modern-continent" data-region="af" onclick="ui.openRegion('af')"
-                  d="M 142 70 C 162 66, 188 70, 194 82 C 196 95, 182 110, 180 125 C 178 140, 172 158, 162 168 C 152 160, 145 142, 138 126 C 132 112, 130 92, 142 70 Z
-                     M 194 135 C 198 132, 202 142, 198 152 C 194 154, 192 145, 194 135 Z"
-                  fill="url(#grad-af)" stroke="#FACC15" stroke-width="0.8" />
-            <text x="162" y="118" text-anchor="middle" fill="#FDE047" font-size="8" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🌍 ÁFRICA</text>
-
-            <!-- 5. ÁSIA & EURÁSIA (asia) -->
-            <path id="region-asia" class="world-region modern-continent" data-region="asia" onclick="ui.openRegion('asia')"
-                  d="M 205 16 C 240 10, 290 14, 320 24 C 332 40, 325 65, 305 78 C 285 86, 260 88, 240 82 C 225 78, 210 68, 204 48 C 200 32, 202 22, 205 16 Z"
-                  fill="url(#grad-asia)" stroke="#A855F7" stroke-width="0.8" />
-            <text x="262" y="50" text-anchor="middle" fill="#D8B4FE" font-size="8" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🌏 EURÁSIA & ÁSIA</text>
-
-            <!-- 6. ORIENTE MÉDIO (me) -->
-            <path id="region-me" class="world-region modern-continent" data-region="me" onclick="ui.openRegion('me')"
-                  d="M 202 78 C 218 72, 235 75, 245 85 C 248 96, 240 108, 232 115 C 220 120, 210 114, 204 102 C 200 92, 198 84, 202 78 Z"
-                  fill="url(#grad-me)" stroke="#F87171" stroke-width="0.8" />
-            <text x="224" y="98" text-anchor="middle" fill="#FCA5A5" font-size="7.5" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🕌 ORIENTE</text>
-
-            <!-- 7. SUDESTE ASIÁTICO & ASEAN (sea) -->
-            <path id="region-sea" class="world-region modern-continent" data-region="sea" onclick="ui.openRegion('sea')"
-                  d="M 270 95 C 295 88, 325 92, 335 106 C 340 120, 328 135, 310 140 C 290 142, 275 132, 268 118 C 265 106, 266 98, 270 95 Z"
-                  fill="url(#grad-sea)" stroke="#38BDF8" stroke-width="0.8" />
-            <text x="302" y="118" text-anchor="middle" fill="#7DD3FC" font-size="7.5" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🌏 ASEAN</text>
-
-            <!-- 8. OCEANIA / PACÍFICO (pac) -->
-            <path id="region-pac" class="world-region modern-continent" data-region="pac" onclick="ui.openRegion('pac')"
-                  d="M 335 140 C 355 134, 385 138, 395 152 C 398 168, 384 184, 362 186 C 344 185, 332 172, 330 156 C 328 148, 330 142, 335 140 Z
-                     M 390 185 C 398 184, 404 192, 398 200 C 392 202, 388 194, 390 185 Z"
-                  fill="url(#grad-eu)" stroke="#38BDF8" stroke-width="0.8" />
-            <text x="362" y="165" text-anchor="middle" fill="#BAE6FD" font-size="7.5" font-family="'Inter',sans-serif" font-weight="700" pointer-events="none">🌊 OCEANIA</text>
-
-            <!-- 9. ANTÁRTICA (ant) -->
-            <path id="region-ant" class="world-region modern-continent" data-region="ant" onclick="ui.openRegion('ant')"
-                  d="M 15 210 C 80 204, 180 202, 260 205 C 330 204, 390 208, 410 216 C 410 226, 15 226, 15 210 Z"
-                  fill="url(#grad-ant)" stroke="#94A3B8" stroke-width="0.8" opacity="0.85" />
-            <text x="210" y="220" text-anchor="middle" fill="#CBD5E1" font-size="7" font-family="'Inter',sans-serif" font-weight="600" pointer-events="none">🧊 PLATAFORMA ANTÁRTICA</text>
-
-            <!-- Marcador do Jogador com pulso radar -->
-            <g id="player-hq-marker" transform="translate(82, 130)" style="cursor:pointer" onclick="ui.openStatModal('power')">
-              <circle cx="0" cy="0" r="14" fill="none" stroke="var(--green)" stroke-width="1.5" opacity="0.6">
-                <animate attributeName="r" values="6;20;6" dur="2.4s" repeatCount="indefinite"/>
-                <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2.4s" repeatCount="indefinite"/>
-              </circle>
-              <circle cx="0" cy="0" r="4.5" fill="var(--green)" />
-              <text x="0" y="14" text-anchor="middle" fill="var(--green)" font-size="7" font-family="'Inter',sans-serif" font-weight="800">QG SOBERANO</text>
-            </g>
-          </svg>
-        </div>
+        <div id="map" style="width: 100%; height: 600px; background: #0b0f19; border-radius: 8px; position: relative; z-index: 1;"></div>
         <!-- Barra de Inteligência Geopolítica Rápida -->
         <div class="world-region-intel-bar" id="world-region-intel-bar">
           <span id="wri-title">🌍 Toque em qualquer continente para abrir inteligência geopolítica regional</span>
@@ -1529,6 +1418,36 @@
     </div>
     <div class="modal-body" id="mission-reward-body" style="padding:20px 16px 24px">
       <!-- Renderizado dinamicamente pelo ui.js com fanfarra -->
+    </div>
+<!-- Super Modal de Operações Geopolíticas (Glassmorphism Executivo) -->
+<div class="modal-overlay" id="modal-geopolitical-ops" style="z-index: 9999; display: none;">
+  <div class="modal-sheet geo-super-modal" style="max-height:92vh; max-width:620px;">
+    <div class="modal-handle"></div>
+    <div class="modal-header geo-modal-header" style="position:relative; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0,255,136,0.2); padding-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span id="geo-modal-flag" style="font-size:32px; filter:drop-shadow(0 0 8px rgba(0,255,136,0.4));">🌐</span>
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h2 class="modal-title" id="geo-modal-title" style="margin:0; font-size:18px; font-weight:800; letter-spacing:0.5px; color:#fff;">AMÉRICA DO SUL</h2>
+            <span class="pill pill-green" id="geo-modal-tension" style="font-size:10px; font-weight:700;">Tensão: Baixa</span>
+          </div>
+          <div class="modal-subtitle" id="geo-modal-subtitle" style="font-size:11px; color:#94a3b8; margin-top:2px;">Bloco: — · Líder Soberano: —</div>
+        </div>
+      </div>
+      <div class="modal-close" onclick="mapModule.closeSuperModal()" style="cursor:pointer; font-size:18px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(255,255,255,0.08); color:#fff;">✕</div>
+    </div>
+
+    <!-- Navegação de 4 Abas do Super Modal -->
+    <div class="geo-modal-tabs">
+      <button class="geo-tab-btn active" id="geotab-btn-eco" onclick="mapModule.switchModalTab('eco')">📈 Economia</button>
+      <button class="geo-tab-btn" id="geotab-btn-mil" onclick="mapModule.switchModalTab('mil')">🎖️ Militar & PvP</button>
+      <button class="geo-tab-btn" id="geotab-btn-spy" onclick="mapModule.switchModalTab('spy')">🕵️ Espionagem</button>
+      <button class="geo-tab-btn" id="geotab-btn-ai" onclick="mapModule.switchModalTab('ai')">📢 Diretrizes IA</button>
+    </div>
+
+    <!-- Conteúdo Dinâmico das Abas -->
+    <div class="modal-body geo-modal-body" id="geo-modal-body" style="padding:14px; overflow-y:auto; max-height:calc(92vh - 160px);">
+      <!-- Preenchido via map.js -->
     </div>
   </div>
 </div>

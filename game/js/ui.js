@@ -277,7 +277,10 @@ class MasterUI {
     if (name === 'territorio')    this.renderTerritoryTab();
     if (name === 'cadeia')        this.renderChainTab();
     if (name === 'instituicoes')  this.renderInstitutions();
-    if (name === 'mundo')         this.renderWorldTab();
+    if (name === 'mundo') {
+      this.renderWorldTab();
+      if (window.mapModule) window.mapModule.invalidateSize();
+    }
     if (name === 'missoes')       this.renderMissionsTab();
 
     // Scroll top
@@ -2117,17 +2120,7 @@ class MasterUI {
 
   openRegion(regionId) {
     if (window.mapModule) {
-      window.mapModule.inspectRegion(regionId);
-    }
-    const info = window.mapModule?.regionData?.[regionId];
-    if (info) {
-      const titleEl = document.getElementById('wri-title');
-      const statsEl = document.getElementById('wri-stats');
-      if (titleEl) titleEl.textContent = `${info.icon} ${info.name.toUpperCase()} — ${info.focus}`;
-      if (statsEl) {
-        statsEl.textContent = `${info.gdpShare} PIB Global`;
-        statsEl.className = 'pill pill-green';
-      }
+      window.mapModule.openSuperModal(regionId);
     }
   }
 
