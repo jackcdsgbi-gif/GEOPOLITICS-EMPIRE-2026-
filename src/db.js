@@ -76,6 +76,8 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_players_peak ON players(peak_gdp DESC);
       CREATE INDEX IF NOT EXISTS idx_players_role ON players(role);
       CREATE INDEX IF NOT EXISTS idx_players_banned ON players(is_banned);
+      CREATE INDEX IF NOT EXISTS idx_players_role_banned ON players(role, is_banned);
+      CREATE INDEX IF NOT EXISTS idx_players_email ON players(email);
 
       CREATE TABLE IF NOT EXISTS blocs (
         id SERIAL PRIMARY KEY,
@@ -166,6 +168,9 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_audit_log_country ON audit_log(country);
       CREATE INDEX IF NOT EXISTS idx_audit_log_player ON audit_log(player_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_created_country ON audit_log(created_at DESC, country);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_event_created ON audit_log(event, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_player_created ON audit_log(player_id, created_at DESC);
     `);
 
     // Atualiza permissão do administrador no banco

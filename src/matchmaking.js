@@ -3,6 +3,7 @@ import { logger } from './logger.js';
 
 const queue = new Map();
 const inMatch = new Map();
+const matchTimers = new Map();
 
 export function createMatchmaking({ db, models, io }) {
   const { Players, Matches, Blocs, Events } = models;
@@ -40,7 +41,66 @@ export function createMatchmaking({ db, models, io }) {
     return { ok: true };
   }
 
+  /**
+   * Remove imediatamente jogador de fila e referências em caso de desconexão abrupta
+   */
+  function handleDisconnect(playerId, socketId) {
+    let removed = false;
+
+    // 1. Remove da fila por playerId
+    if (playerId && queue.has(playerId)) {
+      queue.delete(playerId);
+      removed = true;
+    }
+
+    // 2. Remove da fila por socketId (limpeza para sockets não-autenticados ou anônimos)
+    if (socketId) {
+      for (const [pId, entry] of queue.entries()) {
+        if (entry.socketId === socketId) {
+          queue.delete(pId);
+          removed = true;
+        }
+      }
+    }
+
+    // 3. Remove referências de partida e limpa timers órfãos
+    if (playerId && inMatch.has(playerId)) {
+      const matchId = inMatch.get(playerId);
+      inMatch.delete(playerId);
+
+      // Se nenhum outro participante continuar referenciando esta partida
+      let hasOther = false;
+      for (const [, mId] of inMatch.entries()) {
+        if (mId === matchId) {
+          hasOther = true;
+          break;
+        }
+      }
+      if (!hasOther && matchTimers.has(matchId)) {
+        clearTimeout(matchTimers.get(matchId));
+        matchTimers.delete(matchId);
+      }
+    }
+
+    if (removed) {
+      logger.info(`[Matchmaking] Desconexão tratada. Jogador removido da fila: ${playerId || socketId}`);
+    }
+
+    return { ok: true, removed };
+  }
+
+  function purgeStaleEntries() {
+    const maxAge = 5 * 60 * 1000; // 5 minutos sem pareamento
+    const now = Date.now();
+    for (const [id, entry] of queue.entries()) {
+      if (now - entry.joinedAt > maxAge) {
+        queue.delete(id);
+      }
+    }
+  }
+
   async function tryMatch() {
+    purgeStaleEntries();
     if (queue.size < 2) return;
     const arr = [...queue.values()].sort((a, b) => a.joinedAt - b.joinedAt);
 
@@ -84,10 +144,21 @@ export function createMatchmaking({ db, models, io }) {
     });
 
     logger.game(`Match #${match.id}: ${attacker.username} vs ${defender.username}`);
-    setTimeout(() => resolveMatch(match.id), config.matchResolveDelayMs);
+    
+    // Registra timer no mapa para poder ser limpo se houver desconexão abrupta
+    const timer = setTimeout(() => {
+      matchTimers.delete(match.id);
+      resolveMatch(match.id);
+    }, config.matchResolveDelayMs);
+    matchTimers.set(match.id, timer);
   }
 
   async function resolveMatch(matchId) {
+    if (matchTimers.has(matchId)) {
+      clearTimeout(matchTimers.get(matchId));
+      matchTimers.delete(matchId);
+    }
+
     const m = await Matches.byId(matchId);
     if (!m || m.status !== 'active') return;
 
@@ -183,5 +254,5 @@ export function createMatchmaking({ db, models, io }) {
     }
   }
 
-  return { enqueue, dequeue, status, startLoop, stopLoop, eloDelta };
+  return { enqueue, dequeue, handleDisconnect, purgeStaleEntries, status, startLoop, stopLoop, eloDelta, queue, inMatch };
 }

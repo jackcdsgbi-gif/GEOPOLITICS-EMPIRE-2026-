@@ -401,7 +401,8 @@ function connectSocket() {
   state.socket.on('connect', () => console.log('socket connected'));
   state.socket.on('server:stats', (s) => {
     const b = document.getElementById('online-badge');
-    if (b) b.textContent = `● ${s.playersOnline} online`;
+    const count = s.p !== undefined ? s.p : (s.playersOnline !== undefined ? s.playersOnline : 0);
+    if (b) b.textContent = `● ${count} online`;
   });
   state.socket.on('match:start', (m) => {
     document.getElementById('match-overlay').classList.remove('hidden');

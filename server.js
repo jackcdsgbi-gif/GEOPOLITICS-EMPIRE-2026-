@@ -11,6 +11,7 @@ import { logger } from './src/logger.js';
 import { initDb } from './src/db.js';
 import { registerRoutes } from './src/routes.js';
 import { setupSockets } from './src/sockets.js';
+import { syncBatch } from './src/sync_batch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -42,7 +43,8 @@ app.use(
 
 const db = await initDb();
 registerRoutes(app, db);
-setupSockets(io, db);
+setupSockets(io, db, { app });
+syncBatch.startLoop(db, 30000);
 
 app.get('/api/health', async (_req, res) =>
   res.json({
@@ -75,7 +77,15 @@ server.listen(config.port, '0.0.0.0', () => {
   logger.info('═══════════════════════════════════════════════════════');
 });
 
-process.on('SIGINT', () => {
-  logger.info('Encerrando...');
+async function gracefulShutdown(signal) {
+  logger.info(`Encerrando servidor (${signal})...`);
+  try {
+    await syncBatch.stopLoop(db);
+  } catch (e) {
+    logger.error('Erro no flush durante shutdown:', e.message);
+  }
   server.close(() => process.exit(0));
-});
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

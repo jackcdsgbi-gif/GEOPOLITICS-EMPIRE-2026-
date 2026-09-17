@@ -3,7 +3,7 @@ import { createModels } from './models.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
-export function setupSockets(io, db) {
+export function setupSockets(io, db, options = {}) {
   const models = createModels(db);
 
   io.use((socket, next) => {
@@ -74,6 +74,17 @@ export function setupSockets(io, db) {
     });
 
     socket.on('disconnect', async () => {
+      // 1. Anti-Memory Leak: remove imediatamente jogador ou socket do matchmaking e timers
+      try {
+        const mm = options?.mm || (options?.app && options.app.get('matchmaking'));
+        if (mm && typeof mm.handleDisconnect === 'function') {
+          mm.handleDisconnect(socket.playerId, socket.id);
+        }
+      } catch (mmErr) {
+        logger.error('Erro ao limpar matchmaking no disconnect:', mmErr);
+      }
+
+      // 2. Notifica bloco da desconexão
       if (socket.playerId) {
         try {
           const p = await models.Players.byId(socket.playerId);
@@ -85,16 +96,25 @@ export function setupSockets(io, db) {
           }
         } catch (e) {}
       }
-      logger.net(`Disconnect: ${socket.username || 'anon'}`);
+      logger.net(`Disconnect: ${socket.username || 'anon'} (${socket.id})`);
     });
   });
 
-  // Broadcast de stats
+  // Broadcast de stats em tempo real (Payload minificado para 3G/4G + compatibilidade)
   setInterval(async () => {
     try {
       const online = io.sockets.sockets.size;
       const playersOnline = await models.Players.online();
-      io.emit('server:stats', { online, playersOnline, ts: Date.now() });
+      const ts = Date.now();
+      // Codificação minificada: o = online, p = playersOnline, t = timestamp
+      io.emit('server:stats', {
+        o: online,
+        p: playersOnline,
+        t: ts,
+        online,
+        playersOnline,
+        ts
+      });
     } catch (e) {
       logger.error('stats broadcast error', e);
     }

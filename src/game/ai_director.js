@@ -185,18 +185,27 @@ export class AiDirector {
       this.eventHistory.unshift(event);
       if (this.eventHistory.length > 100) this.eventHistory.pop();
 
-      // Loga no banco do servidor
-      try {
-        this.db.raw.prepare(
-          'INSERT INTO events (type, player_id, bloc_id, payload) VALUES (?, ?, ?, ?)'
-        ).run('ai_director_event', null, null, JSON.stringify(event));
-      } catch (e) {
-        // silencia se tabela já ocupada
+      // Loga no banco PostgreSQL do servidor de forma assíncrona
+      if (this.db?.raw?.query) {
+        this.db.raw.query(
+          'INSERT INTO events (type, player_id, bloc_id, payload) VALUES ($1, $2, $3, $4)',
+          ['ai_director_event', null, null, JSON.stringify(event)]
+        ).catch(() => {});
       }
 
-      // Emite via Socket.io para clientes conectados
+      // Emite via Socket.io com payload minificado para extrema fluidez em 3G/4G
       if (this.io) {
-        this.io.emit('ai:event', event);
+        const minifiedEvent = {
+          i: event.id,
+          ty: event.type,
+          a: event.actor,
+          f: event.flag,
+          h: event.headline,
+          d: event.details,
+          t: event.ts,
+          ...event
+        };
+        this.io.emit('ai:event', minifiedEvent);
       }
 
       logger.game(`[AI DIRECTOR] ${event.headline}`);

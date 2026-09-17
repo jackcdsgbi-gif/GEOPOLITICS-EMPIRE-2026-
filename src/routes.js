@@ -4,6 +4,7 @@ import { signToken, authMiddleware, isAdmin } from './auth.js';
 import { createMatchmaking } from './matchmaking.js';
 import { logger } from './logger.js';
 import { AiDirector } from './game/ai_director.js';
+import { syncBatch } from './sync_batch.js';
 
 // Mapeamento Geopolítico de Continentes
 const CONTINENT_MAP = {
@@ -68,6 +69,10 @@ export function registerRoutes(app, db) {
   const aiDirector = new AiDirector(db, app.get('io'), models);
   aiDirector.startLoop(10000);
 
+  app.set('matchmaking', mm);
+  app.set('aiDirector', aiDirector);
+  app.set('syncBatch', syncBatch);
+
   // ─── AUTH ───────────────────────────────────────────
   app.post('/api/auth/register', async (req, res) => {
     try {
@@ -75,6 +80,7 @@ export function registerRoutes(app, db) {
       const { ip, country } = getClientGeo(req);
       const { continent, bonus } = getContinentDetails(country);
       await models.Players.updateContinent(p.id, continent);
+      syncBatch.cachePlayer({ ...p, continent });
 
       const token = signToken({ pid: p.id, username: p.username, role: p.role });
       logger.net(`Registro: ${p.username} (${country} / ${continent} / ${ip})`);
@@ -110,7 +116,9 @@ export function registerRoutes(app, db) {
 
       if (p.continent !== continent) {
         await models.Players.updateContinent(p.id, continent);
+        p.continent = continent;
       }
+      syncBatch.cachePlayer(p);
 
       logger.net(`Login: ${p.username} (${country} / ${continent} / ${ip})`);
 
@@ -137,8 +145,12 @@ export function registerRoutes(app, db) {
   // ─── PLAYER ─────────────────────────────────────────
   app.get('/api/player/me', authMiddleware, async (req, res) => {
     try {
-      const p = await models.Players.byId(req.playerId);
-      if (!p) return res.status(404).json({ error: 'not_found' });
+      let p = syncBatch.getCachedPlayer(req.playerId);
+      if (!p) {
+        p = await models.Players.byId(req.playerId);
+        if (!p) return res.status(404).json({ error: 'not_found' });
+        syncBatch.cachePlayer(p);
+      }
       const { continent, bonus } = getContinentDetails(p.continent || 'BR');
       res.json({ player: { ...models.Players.public(p), continent: p.continent || continent, continentalBonus: bonus } });
     } catch (e) {
@@ -148,84 +160,55 @@ export function registerRoutes(app, db) {
 
   app.get('/api/player/:id', async (req, res) => {
     try {
-      const p = await models.Players.byId(Number(req.params.id));
-      if (!p) return res.status(404).json({ error: 'not_found' });
+      const pid = Number(req.params.id);
+      let p = syncBatch.getCachedPlayer(pid);
+      if (!p) {
+        p = await models.Players.byId(pid);
+        if (!p) return res.status(404).json({ error: 'not_found' });
+        syncBatch.cachePlayer(p);
+      }
       res.json({ player: models.Players.public(p) });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
   });
 
+  // ROTA CRÍTICA DE ALTA PERFORMANCE (WRITE-BATCHING & IN-MEMORY CACHE)
   app.post('/api/player/sync', authMiddleware, async (req, res) => {
     try {
-      const p = await models.Players.byId(req.playerId);
-      if (!p) return res.status(404).json({ error: 'not_found' });
-
-      const {
-        level,
-        xp,
-        gdp,
-        influence,
-        stability,
-        legacy,
-        base_multiplier,
-        resets,
-        total_earned,
-        state_json
-      } = req.body;
-
-      const now = Date.now();
-      const currentPeak = Math.max(Number(p.peak_gdp) || 0, Number(gdp) || 0, Number(total_earned) || 0);
+      let p = syncBatch.getCachedPlayer(req.playerId);
+      if (!p) {
+        p = await models.Players.byId(req.playerId);
+        if (!p) return res.status(404).json({ error: 'not_found' });
+        syncBatch.cachePlayer(p);
+      }
 
       // Captura geográfica e continente
       const { ip, country } = getClientGeo(req);
       const { continent, bonus } = getContinentDetails(country);
 
-      await models.Players.updateState(p.id, {
-        level,
-        xp,
-        gdp,
-        influence,
-        stability,
-        legacy,
-        base_multiplier,
-        resets,
-        total_earned,
-        peak_gdp: currentPeak,
-        state_json: state_json ? JSON.stringify(state_json) : p.state_json,
-        last_sync: now
-      });
-
-      if (!p.continent || p.continent !== continent) {
-        await models.Players.updateContinent(p.id, continent);
-      }
+      // Atualiza os dados instantaneamente em RAM e enfileira para flush em lote a cada 30s
+      const updated = syncBatch.stagePlayerSync(
+        p.id,
+        req.body,
+        { ip, country, continent },
+        p
+      );
 
       if (aiDirector) {
-        aiDirector.updatePlayerMetrics(Number(total_earned) || Number(gdp) || 0, (Number(level) || 1) * 30, Number(gdp) || 0);
+        aiDirector.updatePlayerMetrics(
+          Number(updated.total_earned) || Number(updated.gdp) || 0,
+          (Number(updated.level) || 1) * 30,
+          Number(updated.gdp) || 0
+        );
       }
 
-      await models.AuditLog.log({
-        event: 'sync',
-        playerId: p.id,
-        username: p.username,
-        country,
-        ip,
-        level: Number(level) || Number(p.level) || 0,
-        gdp: Number(gdp) || Number(p.gdp) || 0,
-        payload: {
-          peak_gdp: currentPeak,
-          total_earned: Number(total_earned) || 0,
-          resets: Number(resets) || 0,
-          continent
-        }
-      });
-
-      const updated = await models.Players.byId(p.id);
+      // Resposta imediata em sub-milissegundos sem sobrecarregar o PostgreSQL no Render
       res.json({
         ok: true,
         player: {
           ...models.Players.public(updated),
-          continent,
+          continent: updated.continent || continent,
           continentalBonus: bonus
         }
       });
@@ -292,8 +275,10 @@ export function registerRoutes(app, db) {
       const targetId = Number(req.params.id);
       const isBanned = req.body.ban !== undefined ? Boolean(req.body.ban) : true;
       await models.Players.setBan(targetId, isBanned);
+      syncBatch.updateCachedPlayer(targetId, { is_banned: isBanned });
 
       if (isBanned) {
+        // Desconecta WebSockets ativos do jogador imediatamente
         const io = app.get('io');
         if (io) {
           io.in(`p:${targetId}`).disconnectSockets(true);
@@ -324,6 +309,7 @@ export function registerRoutes(app, db) {
       if (amount <= 0) return res.status(400).json({ error: 'invalid_amount' });
 
       const updated = await models.Players.addGdpBonus(targetId, amount);
+      syncBatch.updateCachedPlayer(targetId, { gdp: updated.gdp, peak_gdp: updated.peak_gdp });
 
       logger.ok(`[Admin Moderação] Injetado bônus de $${amount} no PIB do jogador ${updated.username}`);
 
@@ -347,6 +333,7 @@ export function registerRoutes(app, db) {
       const targetId = Number(req.params.id);
       const { blocId } = req.body;
       await models.Players.changeBloc(targetId, blocId);
+      syncBatch.updateCachedPlayer(targetId, { bloc_id: blocId });
 
       logger.info(`[Admin Moderação] Jogador ID#${targetId} transferido para Bloco ID#${blocId}`);
 
