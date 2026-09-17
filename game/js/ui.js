@@ -619,14 +619,15 @@ class MasterUI {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
+        animations: false,
+        resizeDelay: 150,
+        events: [], // Desativa captura de eventos para não interceptar rolagem da página
+        layout: {
+          padding: 0
+        },
         plugins: {
           legend: { display: false },
-          tooltip: {
-            enabled: true,
-            callbacks: {
-              label: (ctx) => `Tesouro: ${window.engine ? window.engine.fmt(ctx.raw) : '$' + ctx.raw}`
-            }
-          }
+          tooltip: { enabled: false }
         },
         scales: {
           x: {
@@ -634,18 +635,8 @@ class MasterUI {
             grid: { display: false }
           },
           y: {
-            display: true,
-            position: 'right',
-            grid: {
-              color: gridColor,
-              drawBorder: false
-            },
-            ticks: {
-              color: textColor,
-              font: { family: 'JetBrains Mono', size: 9 },
-              callback: (val) => window.engine ? window.engine.fmt(val) : '$' + val,
-              maxTicksLimit: 3
-            }
+            display: false,
+            grid: { display: false }
           }
         }
       };
@@ -704,38 +695,58 @@ class MasterUI {
     const canvas = document.getElementById('sparkline');
     if (!canvas || !window.Chart) return;
 
+    // Destrói com segurança instâncias anteriores para evitar erro "Canvas is already in use"
+    try {
+      if (window.economyChart) {
+        window.economyChart.destroy();
+        window.economyChart = null;
+      }
+      const existing = window.Chart.getChart(canvas);
+      if (existing) {
+        existing.destroy();
+      }
+    } catch(e) {}
+
     const isDarkMode = !document.body.classList.contains('light-theme');
     const pibLineColor = isDarkMode ? '#00FF66' : '#059669';
     const ctx = canvas.getContext('2d');
     const grad = this._getEconomyGradient(ctx, isDarkMode);
-    const data = [...this.sparkHistory];
+
+    // Garante que haja pelo menos 2 pontos
+    let data = Array.isArray(this.sparkHistory) ? [...this.sparkHistory] : [];
+    if (data.length < 2) {
+      const curVal = (window.engine && window.engine.state && Number(window.engine.state.balance)) || 0;
+      data = [curVal, curVal];
+    }
     const labels = data.map(() => '');
 
-    window.economyChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          data,
-          borderColor: pibLineColor,
-          borderWidth: 2.2,
-          backgroundColor: grad,
-          fill: true,
-          tension: 0.35,
-          pointRadius: (context) => (context.dataIndex === context.dataset.data.length - 1 ? 4 : 0),
-          pointHoverRadius: 6,
-          pointBackgroundColor: pibLineColor,
-          pointBorderColor: '#FFFFFF',
-          pointBorderWidth: 1.5
-        }]
-      },
-      options: this.getChartOptions(isDarkMode, 'sparkline')
-    });
+    try {
+      window.economyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data,
+            borderColor: pibLineColor,
+            borderWidth: 2,
+            backgroundColor: grad,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 0,
+            pointHoverRadius: 0
+          }]
+        },
+        options: this.getChartOptions(isDarkMode, 'sparkline')
+      });
+    } catch(err) {
+      console.warn('Falha ao inicializar economyChart com Chart.js, usando fallback 2D:', err);
+      this._drawSparklineCanvasFallback();
+    }
   }
 
   _tickSparkline() {
     const s = window.engine ? window.engine.state : {};
-    this.sparkHistory.push(s.balance || 0);
+    this.sparkHistory.push(Number(s.balance) || 0);
     if (this.sparkHistory.length > 30) this.sparkHistory.shift();
     this._drawSparkline();
   }
@@ -744,14 +755,23 @@ class MasterUI {
     const canvas = document.getElementById('sparkline');
     if (!canvas) return;
 
+    if (!Array.isArray(this.sparkHistory) || this.sparkHistory.length < 2) {
+      const b = (window.engine && window.engine.state && Number(window.engine.state.balance)) || 0;
+      this.sparkHistory = [b, b];
+    }
+
     if (window.Chart) {
-      if (!window.economyChart) {
-        this._initEconomyChart();
-      }
-      if (window.economyChart) {
-        window.economyChart.data.labels = this.sparkHistory.map(() => '');
-        window.economyChart.data.datasets[0].data = [...this.sparkHistory];
-        window.economyChart.update('none');
+      try {
+        if (!window.economyChart || !window.Chart.getChart(canvas)) {
+          this._initEconomyChart();
+        } else {
+          window.economyChart.data.labels = this.sparkHistory.map(() => '');
+          window.economyChart.data.datasets[0].data = [...this.sparkHistory];
+          window.economyChart.update('none');
+        }
+      } catch(e) {
+        console.warn('Erro na atualização Chart.js do sparkline:', e);
+        this._drawSparklineCanvasFallback();
       }
     } else {
       this._drawSparklineCanvasFallback();
@@ -775,10 +795,11 @@ class MasterUI {
     const ctx = canvas.getContext('2d');
     const W = canvas.offsetWidth || 380;
     const H = 75;
-    canvas.width = W; canvas.height = H;
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
 
     const data = this.sparkHistory;
-    if (data.length < 2) return;
+    if (!data || data.length < 2) return;
 
     const isDarkMode = !document.body.classList.contains('light-theme');
     const pibLineColor = isDarkMode ? '#00FF66' : '#059669';
@@ -3527,7 +3548,7 @@ class MasterUI {
         window.economyChart.data.datasets[0].pointBackgroundColor = pibLineColor;
         window.economyChart.data.datasets[0].backgroundColor = this._getEconomyGradient(ctx, isDarkMode);
       }
-      window.economyChart.update();
+      window.economyChart.update('none');
     }
 
     // 2. countryChart (se ativo)

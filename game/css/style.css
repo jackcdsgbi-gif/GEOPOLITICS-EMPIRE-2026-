@@ -638,8 +638,15 @@ body {
 .trend-up   { color: var(--green); }
 .trend-down { color: var(--red); }
 
-/* Sparkline canvas */
-#sparkline { display: block; margin: 0 12px 10px; }
+/* Sparkline canvas (gerenciado com contenção em .sparkline-wrapper) */
+#sparkline {
+  display: block;
+  width: 100% !important;
+  height: 75px !important;
+  max-height: 75px !important;
+  margin: 0 !important;
+  pointer-events: none;
+}
 
 /* ══════════════════════════════════════
    ABA 2 — TERRITÓRIO (Grid 3×3)
@@ -3742,13 +3749,28 @@ body.light-theme .tt-metric-lbl {
 
 .sparkline-wrapper {
   width: 100%;
+  height: 75px;
+  min-height: 75px;
+  max-height: 75px;
   position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  contain: layout size;
+  padding: 0;
+  margin: 2px 0 0 0;
 }
 
 .sparkline-wrapper canvas {
-  width: 100%;
+  width: 100% !important;
+  height: 75px !important;
+  max-height: 75px !important;
   display: block;
+  margin: 0 !important;
+  padding: 0 !important;
   border-radius: var(--r-sm);
+  box-sizing: border-box;
+  pointer-events: none;
+  touch-action: pan-y pinch-zoom;
 }
 
 /* ═══════════════════════════════════════════════════════════════
