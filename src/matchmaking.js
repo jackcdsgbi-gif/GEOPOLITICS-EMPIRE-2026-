@@ -9,25 +9,29 @@ export function createMatchmaking({ db, models, io }) {
   let tickInterval = null;
 
   function eloDelta(rA, rB, scoreA, k = config.ratingK) {
-    const eA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
+    const eA = 1 / (1 + Math.pow(10, (Number(rB) - Number(rA)) / 400));
     return Math.round(k * (scoreA - eA));
   }
 
-  function power(p) {
-    const blocPower = p.bloc_id ? (Blocs.byId(p.bloc_id)?.power || 0) : 0;
-    return Math.max(1, (p.gdp / 1e6) + (p.rating / 10) + (p.level * 5) + (blocPower * 0.5));
+  async function power(p) {
+    let blocPower = 0;
+    if (p.bloc_id) {
+      const b = await Blocs.byId(p.bloc_id);
+      blocPower = Number(b?.power || 0);
+    }
+    return Math.max(1, (Number(p.gdp) / 1e6) + (Number(p.rating) / 10) + (Number(p.level) * 5) + (blocPower * 0.5));
   }
 
-  function enqueue(playerId, socketId) {
-    const p = Players.byId(playerId);
+  async function enqueue(playerId, socketId) {
+    const p = await Players.byId(playerId);
     if (!p) throw new Error('player_not_found');
-    if (p.shield_until > Date.now()) throw new Error('shield_active');
-    if (p.pvp_blocked_until > Date.now()) throw new Error('pvp_blocked');
+    if (Number(p.shield_until) > Date.now()) throw new Error('shield_active');
+    if (Number(p.pvp_blocked_until) > Date.now()) throw new Error('pvp_blocked');
     if (inMatch.has(playerId)) throw new Error('already_in_match');
     if (queue.has(playerId)) return { queued: true, size: queue.size };
 
-    queue.set(playerId, { playerId, rating: p.rating, joinedAt: Date.now(), socketId });
-    tryMatch();
+    queue.set(playerId, { playerId, rating: Number(p.rating), joinedAt: Date.now(), socketId });
+    await tryMatch();
     return { queued: true, size: queue.size };
   }
 
@@ -36,7 +40,7 @@ export function createMatchmaking({ db, models, io }) {
     return { ok: true };
   }
 
-  function tryMatch() {
+  async function tryMatch() {
     if (queue.size < 2) return;
     const arr = [...queue.values()].sort((a, b) => a.joinedAt - b.joinedAt);
 
@@ -52,20 +56,20 @@ export function createMatchmaking({ db, models, io }) {
         if (Math.abs(a.rating - b.rating) <= window) {
           queue.delete(a.playerId);
           queue.delete(b.playerId);
-          startMatch(a.playerId, b.playerId);
+          await startMatch(a.playerId, b.playerId);
           return tryMatch();
         }
       }
     }
   }
 
-  function startMatch(attackerId, defenderId) {
-    const match = Matches.create(attackerId, defenderId);
+  async function startMatch(attackerId, defenderId) {
+    const match = await Matches.create(attackerId, defenderId);
     inMatch.set(attackerId, match.id);
     inMatch.set(defenderId, match.id);
 
-    const attacker = Players.byId(attackerId);
-    const defender = Players.byId(defenderId);
+    const attacker = await Players.byId(attackerId);
+    const defender = await Players.byId(defenderId);
 
     io.to(`p:${attackerId}`).emit('match:start', {
       matchId: match.id,
@@ -83,37 +87,38 @@ export function createMatchmaking({ db, models, io }) {
     setTimeout(() => resolveMatch(match.id), config.matchResolveDelayMs);
   }
 
-  function resolveMatch(matchId) {
-    const m = Matches.byId(matchId);
+  async function resolveMatch(matchId) {
+    const m = await Matches.byId(matchId);
     if (!m || m.status !== 'active') return;
 
-    const attacker = Players.byId(m.attacker_id);
-    const defender = Players.byId(m.defender_id);
+    const attacker = await Players.byId(m.attacker_id);
+    const defender = await Players.byId(m.defender_id);
     if (!attacker || !defender) return;
 
-    const aP = power(attacker) * (0.9 + Math.random() * 0.2);
-    const dP = power(defender) * (0.9 + Math.random() * 0.2) * 1.1;
+    const baseAP = await power(attacker);
+    const baseDP = await power(defender);
+    const aP = baseAP * (0.9 + Math.random() * 0.2);
+    const dP = baseDP * (0.9 + Math.random() * 0.2) * 1.1;
 
     const attackerWins = aP > dP;
     const winner = attackerWins ? attacker : defender;
     const loser = attackerWins ? defender : attacker;
 
     const ratio = Math.min(1, (attackerWins ? aP / dP : dP / aP) / 2);
-    const stolen = Math.max(0, loser.gdp * config.maxRaidStealPercent * ratio);
+    const stolen = Math.max(0, Number(loser.gdp) * config.maxRaidStealPercent * ratio);
 
-    db.raw.prepare('UPDATE players SET gdp = MAX(0, gdp - ?) WHERE id = ?').run(stolen, loser.id);
-    db.raw.prepare('UPDATE players SET gdp = gdp + ?, total_earned = total_earned + ? WHERE id = ?')
-      .run(stolen, stolen, winner.id);
+    await db.raw.query('UPDATE players SET gdp = GREATEST(0, gdp - $1) WHERE id = $2', [stolen, loser.id]);
+    await db.raw.query('UPDATE players SET gdp = gdp + $1, total_earned = total_earned + $2 WHERE id = $3', [stolen, stolen, winner.id]);
 
     const deltaWinner = eloDelta(winner.rating, loser.rating, 1);
     const deltaLoser = eloDelta(loser.rating, winner.rating, 0);
 
-    Players.applyRating(winner.id, deltaWinner, true);
-    Players.applyRating(loser.id, deltaLoser, false);
+    await Players.applyRating(winner.id, deltaWinner, true);
+    await Players.applyRating(loser.id, deltaLoser, false);
 
-    Players.setShield(loser.id, Date.now() + config.shieldAfterRaidMs);
+    await Players.setShield(loser.id, Date.now() + config.shieldAfterRaidMs);
 
-    Matches.resolve(m.id, {
+    await Matches.resolve(m.id, {
       winnerId: winner.id,
       attackerPower: aP,
       defenderPower: dP,
@@ -121,10 +126,10 @@ export function createMatchmaking({ db, models, io }) {
       ratingDelta: attackerWins ? deltaWinner : deltaLoser
     });
 
-    if (attacker.bloc_id) Blocs.recomputePower(attacker.bloc_id);
-    if (defender.bloc_id) Blocs.recomputePower(defender.bloc_id);
+    if (attacker.bloc_id) await Blocs.recomputePower(attacker.bloc_id);
+    if (defender.bloc_id) await Blocs.recomputePower(defender.bloc_id);
 
-    Events.log('match_resolved', {
+    await Events.log('match_resolved', {
       playerId: winner.id,
       payload: {
         matchId: m.id,
@@ -165,7 +170,9 @@ export function createMatchmaking({ db, models, io }) {
 
   function startLoop() {
     if (tickInterval) return;
-    tickInterval = setInterval(tryMatch, config.matchmakingTickMs);
+    tickInterval = setInterval(() => {
+      tryMatch().catch(err => logger.error('matchmaking loop error', err));
+    }, config.matchmakingTickMs);
     logger.ok('Matchmaking loop iniciado');
   }
 

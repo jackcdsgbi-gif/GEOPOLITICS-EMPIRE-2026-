@@ -18,34 +18,42 @@ export function setupSockets(io, db) {
     next();
   });
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     if (socket.playerId) {
       socket.join(`p:${socket.playerId}`);
-      db.raw.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(Date.now(), socket.playerId);
-      logger.net(`Connect: ${socket.username} (${socket.id})`);
-      const p = models.Players.byId(socket.playerId);
-      if (p?.bloc_id) {
-        socket.join(`b:${p.bloc_id}`);
-        io.to(`b:${p.bloc_id}`).emit('bloc:member-online', {
-          playerId: p.id,
-          username: p.username
-        });
+      try {
+        await db.raw.query('UPDATE players SET last_seen = $1 WHERE id = $2', [Date.now(), socket.playerId]);
+        logger.net(`Connect: ${socket.username} (${socket.id})`);
+        const p = await models.Players.byId(socket.playerId);
+        if (p?.bloc_id) {
+          socket.join(`b:${p.bloc_id}`);
+          io.to(`b:${p.bloc_id}`).emit('bloc:member-online', {
+            playerId: p.id,
+            username: p.username
+          });
+        }
+      } catch (e) {
+        logger.error('socket connect error', e);
       }
     }
 
-    socket.on('bloc:chat', ({ text }) => {
+    socket.on('bloc:chat', async ({ text }) => {
       if (!socket.playerId || !text || typeof text !== 'string') return;
       if (text.length > 300) return;
-      const p = models.Players.byId(socket.playerId);
-      if (!p?.bloc_id) return;
-      const msg = {
-        from: p.username,
-        nation: p.nation_name,
-        emoji: p.nation_emoji || '🌐',
-        text: text.trim(),
-        ts: Date.now()
-      };
-      io.to(`b:${p.bloc_id}`).emit('bloc:chat', msg);
+      try {
+        const p = await models.Players.byId(socket.playerId);
+        if (!p?.bloc_id) return;
+        const msg = {
+          from: p.username,
+          nation: p.nation_name,
+          emoji: p.nation_emoji || '🌐',
+          text: text.trim(),
+          ts: Date.now()
+        };
+        io.to(`b:${p.bloc_id}`).emit('bloc:chat', msg);
+      } catch (e) {
+        logger.error('socket bloc:chat error', e);
+      }
     });
 
     socket.on('bloc:join-room', ({ blocId }) => {
@@ -57,37 +65,45 @@ export function setupSockets(io, db) {
       socket.leave(`b:${blocId}`);
     });
 
-    socket.on('presence:ping', () => {
+    socket.on('presence:ping', async () => {
       if (socket.playerId) {
-        db.raw.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(Date.now(), socket.playerId);
+        try {
+          await db.raw.query('UPDATE players SET last_seen = $1 WHERE id = $2', [Date.now(), socket.playerId]);
+        } catch (e) {}
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       if (socket.playerId) {
-        const p = models.Players.byId(socket.playerId);
-        if (p?.bloc_id) {
-          io.to(`b:${p.bloc_id}`).emit('bloc:member-offline', {
-            playerId: p.id,
-            username: p.username
-          });
-        }
+        try {
+          const p = await models.Players.byId(socket.playerId);
+          if (p?.bloc_id) {
+            io.to(`b:${p.bloc_id}`).emit('bloc:member-offline', {
+              playerId: p.id,
+              username: p.username
+            });
+          }
+        } catch (e) {}
       }
       logger.net(`Disconnect: ${socket.username || 'anon'}`);
     });
   });
 
   // Broadcast de stats
-  setInterval(() => {
-    const online = io.sockets.sockets.size;
-    const playersOnline = models.Players.online();
-    io.emit('server:stats', { online, playersOnline, ts: Date.now() });
+  setInterval(async () => {
+    try {
+      const online = io.sockets.sockets.size;
+      const playersOnline = await models.Players.online();
+      io.emit('server:stats', { online, playersOnline, ts: Date.now() });
+    } catch (e) {
+      logger.error('stats broadcast error', e);
+    }
   }, config.presenceBroadcastMs);
 
   // Roll de temporada
-  setInterval(() => {
+  setInterval(async () => {
     try {
-      db.season.rollIfDue();
+      await db.season.rollIfDue();
     } catch (e) {
       logger.error('season roll', e);
     }

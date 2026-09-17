@@ -9,16 +9,16 @@ export function registerRoutes(app, db) {
   const mm = createMatchmaking({ db, models, io: app.get('io') });
   mm.startLoop();
 
-  const aiDirector = new AiDirector(db, app.get('io'));
+  const aiDirector = new AiDirector(db, app.get('io'), models);
   aiDirector.startLoop(10000);
 
   // ─── AUTH ───────────────────────────────────────────
-  app.post('/api/auth/register', (req, res) => {
+  app.post('/api/auth/register', async (req, res) => {
     try {
-      const p = models.Players.create(req.body);
+      const p = await models.Players.create(req.body);
       const token = signToken({ pid: p.id, username: p.username });
       logger.net(`Registro: ${p.username}`);
-      models.Events.log('player_joined', {
+      await models.Events.log('player_joined', {
         playerId: p.id,
         payload: { username: p.username, nation: p.nation_name }
       });
@@ -28,9 +28,9 @@ export function registerRoutes(app, db) {
     }
   });
 
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     try {
-      const p = models.Players.login(req.body.username, req.body.password);
+      const p = await models.Players.login(req.body.username, req.body.password);
       const token = signToken({ pid: p.id, username: p.username });
       res.json({ token, player: p });
     } catch (e) {
@@ -39,56 +39,69 @@ export function registerRoutes(app, db) {
   });
 
   // ─── PLAYER ─────────────────────────────────────────
-  app.get('/api/player/me', authMiddleware, (req, res) => {
-    const p = models.Players.byId(req.playerId);
-    res.json({ player: models.Players.public(p) });
-  });
-
-  app.get('/api/player/:id', (req, res) => {
-    const p = models.Players.byId(Number(req.params.id));
-    if (!p) return res.status(404).json({ error: 'not_found' });
-    res.json({ player: models.Players.public(p) });
-  });
-
-  app.post('/api/player/sync', authMiddleware, (req, res) => {
-    const p = models.Players.byId(req.playerId);
-    if (!p) return res.status(404).json({ error: 'not_found' });
-
-    const {
-      level,
-      xp,
-      gdp,
-      influence,
-      stability,
-      legacy,
-      base_multiplier,
-      resets,
-      total_earned,
-      state_json
-    } = req.body;
-
-    const now = Date.now();
-
-    models.Players.updateState(p.id, {
-      level,
-      xp,
-      gdp,
-      influence,
-      stability,
-      legacy,
-      base_multiplier,
-      resets,
-      total_earned,
-      peak_gdp: Math.max(p.peak_gdp || 0, gdp || 0, total_earned || 0),
-      state_json: state_json ? JSON.stringify(state_json) : p.state_json,
-      last_sync: now
-    });
-
-    if (aiDirector) {
-      aiDirector.updatePlayerMetrics(total_earned || gdp || 0, (level || 1) * 30, gdp || 0);
+  app.get('/api/player/me', authMiddleware, async (req, res) => {
+    try {
+      const p = await models.Players.byId(req.playerId);
+      res.json({ player: models.Players.public(p) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
+  });
 
-    res.json({ ok: true, player: models.Players.public(models.Players.byId(p.id)) });
+  app.get('/api/player/:id', async (req, res) => {
+    try {
+      const p = await models.Players.byId(Number(req.params.id));
+      if (!p) return res.status(404).json({ error: 'not_found' });
+      res.json({ player: models.Players.public(p) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/player/sync', authMiddleware, async (req, res) => {
+    try {
+      const p = await models.Players.byId(req.playerId);
+      if (!p) return res.status(404).json({ error: 'not_found' });
+
+      const {
+        level,
+        xp,
+        gdp,
+        influence,
+        stability,
+        legacy,
+        base_multiplier,
+        resets,
+        total_earned,
+        state_json
+      } = req.body;
+
+      const now = Date.now();
+
+      await models.Players.updateState(p.id, {
+        level,
+        xp,
+        gdp,
+        influence,
+        stability,
+        legacy,
+        base_multiplier,
+        resets,
+        total_earned,
+        peak_gdp: Math.max(Number(p.peak_gdp) || 0, Number(gdp) || 0, Number(total_earned) || 0),
+        state_json: state_json ? JSON.stringify(state_json) : p.state_json,
+        last_sync: now
+      });
+
+      if (aiDirector) {
+        aiDirector.updatePlayerMetrics(Number(total_earned) || Number(gdp) || 0, (Number(level) || 1) * 30, Number(gdp) || 0);
+      }
+
+      const updated = await models.Players.byId(p.id);
+      res.json({ ok: true, player: models.Players.public(updated) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── AI DIRECTOR LIVE SYNC ──────────────────────────
@@ -117,63 +130,82 @@ export function registerRoutes(app, db) {
   });
 
   // ─── BLOCS ──────────────────────────────────────────
-  app.get('/api/blocs', (_req, res) => {
-    res.json({ blocs: models.Blocs.all() });
-  });
-
-  app.get('/api/blocs/:id', (req, res) => {
-    const b = models.Blocs.byId(Number(req.params.id));
-    if (!b) return res.status(404).json({ error: 'not_found' });
-    const members = models.Blocs.members(b.id);
-    const relations = models.Blocs.allRelations().filter(r => r.bloc_a === b.id || r.bloc_b === b.id);
-    res.json({ bloc: b, members, relations });
-  });
-
-  app.post('/api/blocs', authMiddleware, (req, res) => {
+  app.get('/api/blocs', async (_req, res) => {
     try {
-      const p = models.Players.byId(req.playerId);
+      const blocs = await models.Blocs.all();
+      res.json({ blocs });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/blocs/:id', async (req, res) => {
+    try {
+      const b = await models.Blocs.byId(Number(req.params.id));
+      if (!b) return res.status(404).json({ error: 'not_found' });
+      const members = await models.Blocs.members(b.id);
+      const allRel = await models.Blocs.allRelations();
+      const relations = allRel.filter(r => r.bloc_a === b.id || r.bloc_b === b.id);
+      res.json({ bloc: b, members, relations });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/blocs', authMiddleware, async (req, res) => {
+    try {
+      const p = await models.Players.byId(req.playerId);
       if (p.bloc_id) return res.status(400).json({ error: 'already_in_bloc' });
-      const b = models.Blocs.create({ ...req.body, leaderId: p.id });
-      models.Events.log('bloc_created', { playerId: p.id, blocId: b.id, payload: { name: b.name } });
+      const b = await models.Blocs.create({ ...req.body, leaderId: p.id });
+      await models.Events.log('bloc_created', { playerId: p.id, blocId: b.id, payload: { name: b.name } });
       res.json({ bloc: b });
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
   });
 
-  app.post('/api/blocs/:id/join', authMiddleware, (req, res) => {
+  app.post('/api/blocs/:id/join', authMiddleware, async (req, res) => {
     try {
-      const b = models.Blocs.byId(Number(req.params.id));
+      const b = await models.Blocs.byId(Number(req.params.id));
       if (!b) return res.status(404).json({ error: 'not_found' });
-      const p = models.Players.byId(req.playerId);
+      const p = await models.Players.byId(req.playerId);
       if (p.bloc_id) return res.status(400).json({ error: 'leave_first' });
-      models.Blocs.join(b.id, p.id);
-      models.Blocs.recomputePower(b.id);
-      models.Events.log('bloc_joined', { playerId: p.id, blocId: b.id, payload: { bloc: b.name, player: p.username } });
+      await models.Blocs.join(b.id, p.id);
+      await models.Blocs.recomputePower(b.id);
+      await models.Events.log('bloc_joined', { playerId: p.id, blocId: b.id, payload: { bloc: b.name, player: p.username } });
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
   });
 
-  app.post('/api/blocs/leave', authMiddleware, (req, res) => {
-    const p = models.Players.byId(req.playerId);
-    if (p.bloc_id) {
-      models.Events.log('bloc_left', { playerId: p.id, blocId: p.bloc_id, payload: { player: p.username } });
-      models.Blocs.leave(p.id);
-      models.Blocs.recomputePower(p.bloc_id);
+  app.post('/api/blocs/leave', authMiddleware, async (req, res) => {
+    try {
+      const p = await models.Players.byId(req.playerId);
+      if (p.bloc_id) {
+        await models.Events.log('bloc_left', { playerId: p.id, blocId: p.bloc_id, payload: { player: p.username } });
+        await models.Blocs.leave(p.id);
+        await models.Blocs.recomputePower(p.bloc_id);
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
-    res.json({ ok: true });
   });
 
-  app.get('/api/blocs/relations/all', (_req, res) => {
-    res.json({ relations: models.Blocs.allRelations() });
+  app.get('/api/blocs/relations/all', async (_req, res) => {
+    try {
+      const relations = await models.Blocs.allRelations();
+      res.json({ relations });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── MATCH / PVP ────────────────────────────────────
-  app.post('/api/match/queue', authMiddleware, (req, res) => {
+  app.post('/api/match/queue', authMiddleware, async (req, res) => {
     try {
-      const r = mm.enqueue(req.playerId);
+      const r = await mm.enqueue(req.playerId);
       res.json(r);
     } catch (e) {
       res.status(400).json({ error: e.message });
@@ -189,35 +221,70 @@ export function registerRoutes(app, db) {
     res.json(mm.status(req.playerId));
   });
 
-  app.get('/api/match/history', authMiddleware, (req, res) => {
-    res.json({ matches: models.Matches.recentFor(req.playerId) });
+  app.get('/api/match/history', authMiddleware, async (req, res) => {
+    try {
+      const matches = await models.Matches.recentFor(req.playerId);
+      res.json({ matches });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── LEADERBOARD ────────────────────────────────────
-  app.get('/api/leaderboard/rating', (_req, res) => {
-    res.json({ rows: models.Players.topByRating(100) });
+  app.get('/api/leaderboard/rating', async (_req, res) => {
+    try {
+      const rows = await models.Players.topByRating(100);
+      res.json({ rows });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  app.get('/api/leaderboard/gdp', (_req, res) => {
-    res.json({ rows: models.Players.topByGdp(100) });
+  app.get('/api/leaderboard/gdp', async (_req, res) => {
+    try {
+      const rows = await models.Players.topByGdp(100);
+      res.json({ rows });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  app.get('/api/leaderboard/blocs', (_req, res) => {
-    res.json({ rows: models.Blocs.all() });
+  app.get('/api/leaderboard/blocs', async (_req, res) => {
+    try {
+      const rows = await models.Blocs.all();
+      res.json({ rows });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── SEASON ─────────────────────────────────────────
-  app.get('/api/season', (_req, res) => {
-    res.json({ season: db.season.current() });
+  app.get('/api/season', async (_req, res) => {
+    try {
+      const season = await db.season.current();
+      res.json({ season });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  app.get('/api/season/history', (_req, res) => {
-    res.json({ seasons: db.season.history() });
+  app.get('/api/season/history', async (_req, res) => {
+    try {
+      const seasons = await db.season.history();
+      res.json({ seasons });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── EVENTS ─────────────────────────────────────────
-  app.get('/api/events', (_req, res) => {
-    res.json({ events: models.Events.recent(50) });
+  app.get('/api/events', async (_req, res) => {
+    try {
+      const events = await models.Events.recent(50);
+      res.json({ events });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── AI DIRECTOR ─────────────────────────────────────

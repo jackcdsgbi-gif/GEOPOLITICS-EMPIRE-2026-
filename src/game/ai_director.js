@@ -118,11 +118,17 @@ export class AiDirector {
    */
   rebalanceRubberBanding() {
     // 1. Busca o jogador de maior PP/GDP no banco
-    let topPlayer = null;
+    let topPlayer = this.topPlayer || null;
     try {
-      topPlayer = this.db?.raw?.prepare(
-        'SELECT id, username, gdp, peak_gdp, rating FROM players ORDER BY peak_gdp DESC LIMIT 1'
-      )?.get();
+      if (this.db?.raw?.query) {
+        this.db.raw.query(
+          'SELECT id, username, gdp, peak_gdp, rating FROM players ORDER BY peak_gdp DESC LIMIT 1'
+        ).then(res => {
+          if (res?.rows?.[0]) {
+            this.topPlayer = res.rows[0];
+          }
+        }).catch(() => {});
+      }
     } catch(e) {}
 
     const baselineGdp = Math.max(50_000, this.externalPlayerCapital || 0, topPlayer?.peak_gdp || 0, (this.externalPlayerGdp || 0) * 24);

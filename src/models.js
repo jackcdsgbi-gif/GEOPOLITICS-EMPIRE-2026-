@@ -5,34 +5,47 @@ export function createModels(db) {
   const raw = db.raw;
 
   const Players = {
-    create({ username, password, nationName, nationEmoji = '🌐', doctrine = 'neutral' }) {
+    async create({ username, password, nationName, nationEmoji = '🌐', doctrine = 'neutral' }) {
       if (!username || username.length < 3 || username.length > 20) throw new Error('username_invalid');
       if (!password || password.length < 6) throw new Error('password_short');
-      if (raw.prepare('SELECT id FROM players WHERE username = ?').get(username)) throw new Error('username_taken');
+
+      const existing = await raw.query('SELECT id FROM players WHERE username = $1', [username]);
+      if (existing.rows.length > 0) throw new Error('username_taken');
+
       const hash = hashPassword(password);
       const now = Date.now();
-      const season = db.season.current();
-      const info = raw.prepare(`
+      const season = await db.season.current();
+      const seasonId = season ? Number(season.id) : 1;
+
+      const res = await raw.query(`
         INSERT INTO players (username, password_hash, nation_name, nation_emoji, doctrine, rating, peak_rating, last_seen, created_at, season_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(username, hash, nationName || username, nationEmoji, doctrine, config.ratingStart, config.ratingStart, now, now, season.id);
-      return this.byId(info.lastInsertRowid);
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+      `, [username, hash, nationName || username, nationEmoji, doctrine, config.ratingStart, config.ratingStart, now, now, seasonId]);
+
+      return this.public(res.rows[0]);
     },
 
-    login(username, password) {
-      const row = raw.prepare('SELECT * FROM players WHERE username = ?').get(username);
+    async login(username, password) {
+      const res = await raw.query('SELECT * FROM players WHERE username = $1', [username]);
+      const row = res.rows[0];
       if (!row) throw new Error('invalid_credentials');
       if (!verifyPassword(password, row.password_hash)) throw new Error('invalid_credentials');
-      raw.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(Date.now(), row.id);
+
+      await raw.query('UPDATE players SET last_seen = $1 WHERE id = $2', [Date.now(), row.id]);
       return this.public(row);
     },
 
-    byId(id) {
-      return raw.prepare('SELECT * FROM players WHERE id = ?').get(id);
+    async byId(id) {
+      if (!id) return null;
+      const res = await raw.query('SELECT * FROM players WHERE id = $1', [Number(id)]);
+      return res.rows[0] || null;
     },
 
-    byUsername(u) {
-      return raw.prepare('SELECT * FROM players WHERE username = ?').get(u);
+    async byUsername(u) {
+      if (!u) return null;
+      const res = await raw.query('SELECT * FROM players WHERE username = $1', [u]);
+      return res.rows[0] || null;
     },
 
     public(row) {
@@ -41,171 +54,243 @@ export function createModels(db) {
       return safe;
     },
 
-    updateState(id, patch) {
-      const allowed = ['level','xp','gdp','peak_gdp','influence','stability','legacy', 'base_multiplier','resets','total_earned','last_sync','state_json'];
+    async updateState(id, patch) {
+      const allowed = ['level', 'xp', 'gdp', 'peak_gdp', 'influence', 'stability', 'legacy', 'base_multiplier', 'resets', 'total_earned', 'last_sync', 'state_json'];
       const keys = Object.keys(patch).filter(k => allowed.includes(k) && patch[k] !== undefined);
       if (keys.length === 0) return;
-      const set = keys.map(k => `${k} = ?`).join(', ');
+
+      const setParts = keys.map((k, idx) => `${k} = $${idx + 1}`);
       const values = keys.map(k => patch[k]);
-      raw.prepare(`UPDATE players SET ${set}, last_seen = ? WHERE id = ?`)
-        .run(...values, Date.now(), id);
+      values.push(Date.now());
+      values.push(Number(id));
+
+      const sql = `UPDATE players SET ${setParts.join(', ')}, last_seen = $${values.length - 1} WHERE id = $${values.length}`;
+      await raw.query(sql, values);
     },
 
-    setBloc(id, blocId, role = 'member') {
-      raw.prepare('UPDATE players SET bloc_id = ?, bloc_role = ? WHERE id = ?').run(blocId, role, id);
+    async setBloc(id, blocId, role = 'member') {
+      await raw.query('UPDATE players SET bloc_id = $1, bloc_role = $2 WHERE id = $3', [blocId ? Number(blocId) : null, role, Number(id)]);
     },
 
-    applyRating(id, delta, win) {
-      const p = this.byId(id);
-      const newRating = Math.max(100, p.rating + delta);
-      const peak = Math.max(p.peak_rating, newRating);
-      raw.prepare('UPDATE players SET rating = ?, peak_rating = ?, wins = wins + ?, losses = losses + ? WHERE id = ?')
-        .run(newRating, peak, win ? 1 : 0, win ? 0 : 1, id);
+    async applyRating(id, delta, win) {
+      const p = await this.byId(id);
+      if (!p) return;
+      const newRating = Math.max(100, Number(p.rating) + Number(delta));
+      const peak = Math.max(Number(p.peak_rating), newRating);
+      await raw.query(
+        'UPDATE players SET rating = $1, peak_rating = $2, wins = wins + $3, losses = losses + $4 WHERE id = $5',
+        [newRating, peak, win ? 1 : 0, win ? 0 : 1, Number(id)]
+      );
     },
 
-    setShield(id, untilMs) {
-      raw.prepare('UPDATE players SET shield_until = ? WHERE id = ?').run(untilMs, id);
+    async setShield(id, untilMs) {
+      await raw.query('UPDATE players SET shield_until = $1 WHERE id = $2', [Number(untilMs), Number(id)]);
     },
 
-    flag(id) {
-      raw.prepare('UPDATE players SET flags = flags + 1 WHERE id = ?').run(id);
-      const p = this.byId(id);
-      if (p && p.flags >= config.antiCheatFlagLimit) {
-        raw.prepare('UPDATE players SET pvp_blocked_until = ? WHERE id = ?')
-          .run(Date.now() + config.pvpBlockHours * 3600_000, id);
+    async flag(id) {
+      await raw.query('UPDATE players SET flags = flags + 1 WHERE id = $1', [Number(id)]);
+      const p = await this.byId(id);
+      if (p && Number(p.flags) >= config.antiCheatFlagLimit) {
+        await raw.query(
+          'UPDATE players SET pvp_blocked_until = $1 WHERE id = $2',
+          [Date.now() + config.pvpBlockHours * 3600_000, Number(id)]
+        );
       }
     },
 
-    topByRating(limit = 100) {
-      return raw.prepare(`SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, peak_rating, wins, losses, bloc_id, resets FROM players ORDER BY rating DESC LIMIT ?`).all(limit);
+    async topByRating(limit = 100) {
+      const res = await raw.query(
+        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, peak_rating, wins, losses, bloc_id, resets
+         FROM players
+         ORDER BY rating DESC
+         LIMIT $1`,
+        [Number(limit)]
+      );
+      return res.rows;
     },
 
-    topByGdp(limit = 100) {
-      return raw.prepare(`SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, wins, losses, bloc_id FROM players ORDER BY peak_gdp DESC LIMIT ?`).all(limit);
+    async topByGdp(limit = 100) {
+      const res = await raw.query(
+        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, wins, losses, bloc_id
+         FROM players
+         ORDER BY peak_gdp DESC
+         LIMIT $1`,
+        [Number(limit)]
+      );
+      return res.rows;
     },
 
-    online(thresholdMs = 5 * 60 * 1000) {
-      return raw.prepare('SELECT COUNT(*) AS c FROM players WHERE last_seen > ?')
-        .get(Date.now() - thresholdMs).c;
+    async online(thresholdMs = 5 * 60 * 1000) {
+      const res = await raw.query('SELECT COUNT(*) AS c FROM players WHERE last_seen > $1', [Date.now() - thresholdMs]);
+      return Number(res.rows[0]?.c || 0);
     }
   };
 
   const Blocs = {
-    byId(id) {
-      return raw.prepare('SELECT * FROM blocs WHERE id = ?').get(id);
+    async byId(id) {
+      if (!id) return null;
+      const res = await raw.query('SELECT * FROM blocs WHERE id = $1', [Number(id)]);
+      return res.rows[0] || null;
     },
 
-    all() {
-      return raw.prepare(`
+    async all() {
+      const res = await raw.query(`
         SELECT b.*, (SELECT COUNT(*) FROM players WHERE bloc_id = b.id) AS members
         FROM blocs b
         ORDER BY power DESC, id ASC
-      `).all();
+      `);
+      return res.rows;
     },
 
-    create({ name, emoji, doctrine, color, description, leaderId }) {
+    async create({ name, emoji, doctrine, color, description, leaderId }) {
       if (!name || name.length < 3 || name.length > 30) throw new Error('bloc_name_invalid');
-      if (raw.prepare('SELECT id FROM blocs WHERE name = ?').get(name)) throw new Error('bloc_name_taken');
-      const info = raw.prepare(`INSERT INTO blocs (name, emoji, doctrine, color, description, leader_id) VALUES (?,?,?,?,?,?)`)
-        .run(name, emoji || '🛡️', doctrine || 'market', color || '#1E3A8A', description || '', leaderId);
-      raw.prepare('UPDATE players SET bloc_id = ?, bloc_role = ? WHERE id = ?')
-        .run(info.lastInsertRowid, 'leader', leaderId);
-      return this.byId(info.lastInsertRowid);
+      const existing = await raw.query('SELECT id FROM blocs WHERE name = $1', [name]);
+      if (existing.rows.length > 0) throw new Error('bloc_name_taken');
+
+      const res = await raw.query(
+        `INSERT INTO blocs (name, emoji, doctrine, color, description, leader_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [name, emoji || '🛡️', doctrine || 'market', color || '#1E3A8A', description || '', Number(leaderId)]
+      );
+      const bloc = res.rows[0];
+
+      await raw.query('UPDATE players SET bloc_id = $1, bloc_role = $2 WHERE id = $3', [bloc.id, 'leader', Number(leaderId)]);
+      return bloc;
     },
 
-    join(blocId, playerId, role = 'member') {
-      const bloc = this.byId(blocId);
+    async join(blocId, playerId, role = 'member') {
+      const bloc = await this.byId(blocId);
       if (!bloc) throw new Error('bloc_not_found');
-      const count = raw.prepare('SELECT COUNT(*) AS c FROM players WHERE bloc_id = ?').get(blocId).c;
-      if (count >= bloc.member_limit) throw new Error('bloc_full');
-      raw.prepare('UPDATE players SET bloc_id = ?, bloc_role = ? WHERE id = ?').run(blocId, role, playerId);
+
+      const countRes = await raw.query('SELECT COUNT(*) AS c FROM players WHERE bloc_id = $1', [Number(blocId)]);
+      const count = Number(countRes.rows[0]?.c || 0);
+      if (count >= Number(bloc.member_limit)) throw new Error('bloc_full');
+
+      await raw.query('UPDATE players SET bloc_id = $1, bloc_role = $2 WHERE id = $3', [Number(blocId), role, Number(playerId)]);
     },
 
-    leave(playerId) {
-      raw.prepare('UPDATE players SET bloc_id = NULL, bloc_role = ? WHERE id = ?').run('member', playerId);
+    async leave(playerId) {
+      await raw.query("UPDATE players SET bloc_id = NULL, bloc_role = 'member' WHERE id = $1", [Number(playerId)]);
     },
 
-    members(blocId) {
-      return raw.prepare(`SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, bloc_role, last_seen FROM players WHERE bloc_id = ? ORDER BY gdp DESC`).all(blocId);
+    async members(blocId) {
+      const res = await raw.query(
+        `SELECT id, username, nation_name, nation_emoji, level, gdp, peak_gdp, rating, bloc_role, last_seen
+         FROM players
+         WHERE bloc_id = $1
+         ORDER BY gdp DESC`,
+        [Number(blocId)]
+      );
+      return res.rows;
     },
 
-    recomputePower(blocId) {
-      const r = raw.prepare(`SELECT COUNT(*) AS c, COALESCE(SUM(gdp),0) AS g, COALESCE(SUM(rating),0) AS rt FROM players WHERE bloc_id = ?`).get(blocId);
-      const power = (r.g / 1e6) + (r.rt / 100) + (r.c * 10);
-      raw.prepare('UPDATE blocs SET power = ?, influence = influence + 1 WHERE id = ?').run(power, blocId);
+    async recomputePower(blocId) {
+      const res = await raw.query(
+        `SELECT COUNT(*) AS c, COALESCE(SUM(gdp),0) AS g, COALESCE(SUM(rating),0) AS rt
+         FROM players
+         WHERE bloc_id = $1`,
+        [Number(blocId)]
+      );
+      const r = res.rows[0] || { c: 0, g: 0, rt: 0 };
+      const power = (Number(r.g) / 1e6) + (Number(r.rt) / 100) + (Number(r.c) * 10);
+
+      await raw.query('UPDATE blocs SET power = $1, influence = influence + 1 WHERE id = $2', [power, Number(blocId)]);
       return power;
     },
 
-    relation(a, b) {
+    async relation(a, b) {
       const [x, y] = [Math.min(a, b), Math.max(a, b)];
-      return raw.prepare('SELECT * FROM bloc_relations WHERE bloc_a = ? AND bloc_b = ?').get(x, y);
+      const res = await raw.query('SELECT * FROM bloc_relations WHERE bloc_a = $1 AND bloc_b = $2', [x, y]);
+      return res.rows[0] || null;
     },
 
-    setRelation(a, b, relation, status) {
+    async setRelation(a, b, relation, status) {
       const [x, y] = [Math.min(a, b), Math.max(a, b)];
-      const clamped = Math.max(-100, Math.min(100, relation));
-      raw.prepare(`
+      const clamped = Math.max(-100, Math.min(100, Number(relation)));
+      await raw.query(`
         INSERT INTO bloc_relations (bloc_a, bloc_b, relation, status, updated_at)
-        VALUES (?,?,?,?,?)
-        ON CONFLICT(bloc_a, bloc_b) DO UPDATE SET
-          relation = excluded.relation,
-          status = excluded.status,
-          updated_at = excluded.updated_at
-      `).run(x, y, clamped, status, Date.now());
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (bloc_a, bloc_b) DO UPDATE SET
+          relation = EXCLUDED.relation,
+          status = EXCLUDED.status,
+          updated_at = EXCLUDED.updated_at
+      `, [x, y, clamped, status, Date.now()]);
     },
 
-    allRelations() {
-      return raw.prepare('SELECT * FROM bloc_relations').all();
+    async allRelations() {
+      const res = await raw.query('SELECT * FROM bloc_relations');
+      return res.rows;
     }
   };
 
   const Matches = {
-    create(attackerId, defenderId) {
-      const info = raw.prepare('INSERT INTO matches (attacker_id, defender_id, status) VALUES (?,?,?)')
-        .run(attackerId, defenderId, 'active');
-      return raw.prepare('SELECT * FROM matches WHERE id = ?').get(info.lastInsertRowid);
+    async create(attackerId, defenderId) {
+      const res = await raw.query(
+        "INSERT INTO matches (attacker_id, defender_id, status) VALUES ($1, $2, 'active') RETURNING *",
+        [Number(attackerId), Number(defenderId)]
+      );
+      return res.rows[0];
     },
 
-    resolve(id, { winnerId, attackerPower, defenderPower, stolenGdp, ratingDelta }) {
-      raw.prepare(`UPDATE matches SET status = ?, winner_id = ?, attacker_power = ?, defender_power = ?, stolen_gdp = ?, rating_delta = ?, resolved_at = ? WHERE id = ?`)
-        .run('resolved', winnerId, attackerPower, defenderPower, stolenGdp, ratingDelta, Date.now(), id);
+    async resolve(id, { winnerId, attackerPower, defenderPower, stolenGdp, ratingDelta }) {
+      await raw.query(`
+        UPDATE matches
+        SET status = 'resolved', winner_id = $1, attacker_power = $2, defender_power = $3, stolen_gdp = $4, rating_delta = $5, resolved_at = $6
+        WHERE id = $7
+      `, [Number(winnerId), Number(attackerPower), Number(defenderPower), Number(stolenGdp), Number(ratingDelta), Date.now(), Number(id)]);
     },
 
-    recentFor(playerId, limit = 20) {
-      return raw.prepare(`
+    async recentFor(playerId, limit = 20) {
+      const res = await raw.query(`
         SELECT m.*,
           a.username AS attacker_name, a.nation_name AS attacker_nation, a.nation_emoji AS attacker_emoji,
           d.username AS defender_name, d.nation_name AS defender_nation, d.nation_emoji AS defender_emoji
         FROM matches m
         JOIN players a ON a.id = m.attacker_id
         JOIN players d ON d.id = m.defender_id
-        WHERE m.attacker_id = ? OR m.defender_id = ?
+        WHERE m.attacker_id = $1 OR m.defender_id = $2
         ORDER BY m.created_at DESC
-        LIMIT ?
-      `).all(playerId, playerId, limit);
+        LIMIT $3
+      `, [Number(playerId), Number(playerId), Number(limit)]);
+      return res.rows;
     },
 
-    byId(id) {
-      return raw.prepare('SELECT * FROM matches WHERE id = ?').get(id);
+    async byId(id) {
+      if (!id) return null;
+      const res = await raw.query('SELECT * FROM matches WHERE id = $1', [Number(id)]);
+      return res.rows[0] || null;
     }
   };
 
   const Events = {
-    log(type, { playerId = null, blocId = null, payload = {} } = {}) {
-      raw.prepare('INSERT INTO events (type, player_id, bloc_id, payload) VALUES (?,?,?,?)')
-        .run(type, playerId, blocId, JSON.stringify(payload));
+    async log(type, { playerId = null, blocId = null, payload = {} } = {}) {
+      await raw.query(
+        'INSERT INTO events (type, player_id, bloc_id, payload) VALUES ($1, $2, $3, $4)',
+        [type, playerId ? Number(playerId) : null, blocId ? Number(blocId) : null, JSON.stringify(payload)]
+      );
     },
 
-    recent(limit = 50) {
-      return raw.prepare(`
+    async recent(limit = 50) {
+      const res = await raw.query(`
         SELECT e.*, p.username AS player_name, p.nation_name, p.nation_emoji
         FROM events e
         LEFT JOIN players p ON p.id = e.player_id
         ORDER BY e.created_at DESC
-        LIMIT ?
-      `).all(limit);
+        LIMIT $1
+      `, [Number(limit)]);
+      return res.rows;
     }
   };
 
-  return { Players, Blocs, Matches, Events, raw };
+  const AuditLog = {
+    async log(event, payload = {}) {
+      await raw.query(
+        'INSERT INTO audit_log (event, payload) VALUES ($1, $2)',
+        [event, JSON.stringify(payload)]
+      );
+    }
+  };
+
+  return { Players, Blocs, Matches, Events, AuditLog, raw };
 }

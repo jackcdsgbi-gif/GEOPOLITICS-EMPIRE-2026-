@@ -40,15 +40,15 @@ app.use(
   })
 );
 
-const db = initDb();
+const db = await initDb();
 registerRoutes(app, db);
 setupSockets(io, db);
 
-app.get('/api/health', (_req, res) =>
+app.get('/api/health', async (_req, res) =>
   res.json({
     ok: true,
     ts: Date.now(),
-    season: db.season.current(),
+    season: await db.season.current(),
     uptime: process.uptime()
   })
 );
