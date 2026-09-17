@@ -5,6 +5,43 @@ import { createMatchmaking } from './matchmaking.js';
 import { logger } from './logger.js';
 import { AiDirector } from './game/ai_director.js';
 
+// Mapeamento Geopolítico de Continentes
+const CONTINENT_MAP = {
+  // América do Sul: +5% Agro
+  BR: 'South America', AR: 'South America', CL: 'South America', CO: 'South America',
+  PE: 'South America', UY: 'South America', PY: 'South America', BO: 'South America',
+  VE: 'South America', EC: 'South America',
+  // Europa: +5% Tech
+  DE: 'Europe', FR: 'Europe', GB: 'Europe', IT: 'Europe', ES: 'Europe', PT: 'Europe',
+  NL: 'Europe', BE: 'Europe', CH: 'Europe', SE: 'Europe', NO: 'Europe', PL: 'Europe',
+  RU: 'Europe', UA: 'Europe', AT: 'Europe', IE: 'Europe',
+  // Ásia: +5% Indústria
+  CN: 'Asia', JP: 'Asia', KR: 'Asia', IN: 'Asia', SG: 'Asia', TW: 'Asia',
+  VN: 'Asia', ID: 'Asia', MY: 'Asia', TH: 'Asia', PH: 'Asia', SA: 'Asia',
+  AE: 'Asia', IL: 'Asia', TR: 'Asia',
+  // América do Norte: +5% Capital
+  US: 'North America', CA: 'North America', MX: 'North America',
+  // África: +5% Mineração
+  ZA: 'Africa', NG: 'Africa', EG: 'Africa', KE: 'Africa', GH: 'Africa',
+  // Oceania: +5% Logística
+  AU: 'Oceania', NZ: 'Oceania'
+};
+
+const CONTINENT_BONUSES = {
+  'South America': { type: 'agro', bonus: 0.05, label: '+5% Commodities Agrícolas (Agro)', badge: '🌾 +5% Agro' },
+  'Europe': { type: 'tech', bonus: 0.05, label: '+5% Velocidade de Tecnologia (P&D)', badge: '🔬 +5% Tech' },
+  'Asia': { type: 'industry', bonus: 0.05, label: '+5% Produção Industrial (Manufatura)', badge: '🏭 +5% Indústria' },
+  'North America': { type: 'capital', bonus: 0.05, label: '+5% Multiplicador Financeiro (Capital)', badge: '💵 +5% Capital' },
+  'Africa': { type: 'mining', bonus: 0.05, label: '+5% Extração Mineral (Minérios)', badge: '⛏️ +5% Mineração' },
+  'Oceania': { type: 'logistics', bonus: 0.05, label: '+5% Logística e Soberania Marítima', badge: '⚓ +5% Logística' }
+};
+
+export function getContinentDetails(countryCode) {
+  const continent = CONTINENT_MAP[countryCode] || 'South America';
+  const bonus = CONTINENT_BONUSES[continent] || CONTINENT_BONUSES['South America'];
+  return { continent, bonus };
+}
+
 export function getClientGeo(req) {
   const forwarded = req.headers['x-forwarded-for'];
   let ip = forwarded ? forwarded.split(',')[0].trim() : req.socket?.remoteAddress || '';
@@ -35,14 +72,16 @@ export function registerRoutes(app, db) {
   app.post('/api/auth/register', async (req, res) => {
     try {
       const p = await models.Players.create(req.body);
-      const token = signToken({ pid: p.id, username: p.username, role: p.role });
       const { ip, country } = getClientGeo(req);
+      const { continent, bonus } = getContinentDetails(country);
+      await models.Players.updateContinent(p.id, continent);
 
-      logger.net(`Registro: ${p.username} (${country} / ${ip})`);
+      const token = signToken({ pid: p.id, username: p.username, role: p.role });
+      logger.net(`Registro: ${p.username} (${country} / ${continent} / ${ip})`);
 
       await models.Events.log('player_joined', {
         playerId: p.id,
-        payload: { username: p.username, nation: p.nation_name, country }
+        payload: { username: p.username, nation: p.nation_name, country, continent }
       });
 
       await models.AuditLog.log({
@@ -53,10 +92,10 @@ export function registerRoutes(app, db) {
         ip,
         level: 0,
         gdp: 0,
-        payload: { nation: p.nation_name, doctrine: p.doctrine }
+        payload: { nation: p.nation_name, doctrine: p.doctrine, continent }
       });
 
-      res.json({ token, player: models.Players.public(p) });
+      res.json({ token, player: { ...models.Players.public(p), continent, continentalBonus: bonus } });
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
@@ -67,8 +106,13 @@ export function registerRoutes(app, db) {
       const p = await models.Players.login(req.body.username, req.body.password);
       const token = signToken({ pid: p.id, username: p.username, role: p.role });
       const { ip, country } = getClientGeo(req);
+      const { continent, bonus } = getContinentDetails(country);
 
-      logger.net(`Login: ${p.username} (${country} / ${ip})`);
+      if (p.continent !== continent) {
+        await models.Players.updateContinent(p.id, continent);
+      }
+
+      logger.net(`Login: ${p.username} (${country} / ${continent} / ${ip})`);
 
       await models.AuditLog.log({
         event: 'login',
@@ -78,11 +122,14 @@ export function registerRoutes(app, db) {
         ip,
         level: Number(p.level) || 0,
         gdp: Number(p.gdp) || 0,
-        payload: { rating: p.rating }
+        payload: { rating: p.rating, continent }
       });
 
-      res.json({ token, player: p });
+      res.json({ token, player: { ...p, continent, continentalBonus: bonus } });
     } catch (e) {
+      if (e.message === 'account_banned') {
+        return res.status(403).json({ error: 'account_banned', message: 'Sua conta foi suspensa pela moderação global.' });
+      }
       res.status(401).json({ error: e.message });
     }
   });
@@ -91,7 +138,9 @@ export function registerRoutes(app, db) {
   app.get('/api/player/me', authMiddleware, async (req, res) => {
     try {
       const p = await models.Players.byId(req.playerId);
-      res.json({ player: models.Players.public(p) });
+      if (!p) return res.status(404).json({ error: 'not_found' });
+      const { continent, bonus } = getContinentDetails(p.continent || 'BR');
+      res.json({ player: { ...models.Players.public(p), continent: p.continent || continent, continentalBonus: bonus } });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -128,6 +177,10 @@ export function registerRoutes(app, db) {
       const now = Date.now();
       const currentPeak = Math.max(Number(p.peak_gdp) || 0, Number(gdp) || 0, Number(total_earned) || 0);
 
+      // Captura geográfica e continente
+      const { ip, country } = getClientGeo(req);
+      const { continent, bonus } = getContinentDetails(country);
+
       await models.Players.updateState(p.id, {
         level,
         xp,
@@ -143,12 +196,14 @@ export function registerRoutes(app, db) {
         last_sync: now
       });
 
+      if (!p.continent || p.continent !== continent) {
+        await models.Players.updateContinent(p.id, continent);
+      }
+
       if (aiDirector) {
         aiDirector.updatePlayerMetrics(Number(total_earned) || Number(gdp) || 0, (Number(level) || 1) * 30, Number(gdp) || 0);
       }
 
-      // Captura geográfica e registro em audit_log
-      const { ip, country } = getClientGeo(req);
       await models.AuditLog.log({
         event: 'sync',
         playerId: p.id,
@@ -160,36 +215,171 @@ export function registerRoutes(app, db) {
         payload: {
           peak_gdp: currentPeak,
           total_earned: Number(total_earned) || 0,
-          resets: Number(resets) || 0
+          resets: Number(resets) || 0,
+          continent
         }
       });
 
       const updated = await models.Players.byId(p.id);
-      res.json({ ok: true, player: models.Players.public(updated) });
+      res.json({
+        ok: true,
+        player: {
+          ...models.Players.public(updated),
+          continent,
+          continentalBonus: bonus
+        }
+      });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  // ─── ADMIN DASHBOARD (PRIVADO) ──────────────────────
+  // ─── ADMIN DASHBOARD & LIVE OPS (PRIVADO) ────────────
   app.get('/api/admin/dashboard', authMiddleware, isAdmin, async (req, res) => {
     try {
       const byCountry = await models.AuditLog.getStatsByCountry();
       const recentProgress = await models.AuditLog.getRecentProgress(20);
       const totals = await models.AuditLog.getTotalStats();
+      const syncTimeline = await models.AuditLog.getSyncTimeline24h();
+      const countryDistribution = await models.AuditLog.getCountryDistribution();
+      const aiState = aiDirector ? aiDirector.getState() : { isPaused: false, aggression: 1.0 };
 
       res.json({
         ok: true,
         stats: {
           byCountry,
           recentProgress,
-          totals
+          totals,
+          chartData: {
+            countryDistribution,
+            syncTimeline
+          },
+          aiState
         }
       });
     } catch (e) {
       logger.error('admin dashboard error', e);
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // Perfil detalhado com auditoria para Modal de Moderação
+  app.get('/api/admin/player/:id', authMiddleware, isAdmin, async (req, res) => {
+    try {
+      const profile = await models.Players.getProfileWithAudit(req.params.id);
+      if (!profile) return res.status(404).json({ error: 'player_not_found' });
+
+      const { continent, bonus } = getContinentDetails(profile.player.country || 'BR');
+      const allBlocs = await models.Blocs.all();
+
+      res.json({
+        ok: true,
+        profile: {
+          ...profile,
+          continent: profile.player.continent || continent,
+          continentalBonus: bonus,
+          availableBlocs: allBlocs
+        }
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Ação de Moderação: Banir / Desbanir
+  app.post('/api/admin/player/:id/ban', authMiddleware, isAdmin, async (req, res) => {
+    try {
+      const targetId = Number(req.params.id);
+      const isBanned = req.body.ban !== undefined ? Boolean(req.body.ban) : true;
+      await models.Players.setBan(targetId, isBanned);
+
+      if (isBanned) {
+        const io = app.get('io');
+        if (io) {
+          io.in(`p:${targetId}`).disconnectSockets(true);
+        }
+        logger.warn(`[Admin Moderação] Jogador ID#${targetId} foi BANIDO por ${req.username}`);
+      } else {
+        logger.info(`[Admin Moderação] Jogador ID#${targetId} foi DESBANIDO por ${req.username}`);
+      }
+
+      await models.AuditLog.log({
+        event: isBanned ? 'admin_ban' : 'admin_unban',
+        playerId: targetId,
+        username: req.username,
+        payload: { adminId: req.playerId, isBanned }
+      });
+
+      res.json({ ok: true, is_banned: isBanned });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Ação de Moderação: Injetar Bônus de PIB
+  app.post('/api/admin/player/:id/bonus', authMiddleware, isAdmin, async (req, res) => {
+    try {
+      const targetId = Number(req.params.id);
+      const amount = Number(req.body.amount) || 0;
+      if (amount <= 0) return res.status(400).json({ error: 'invalid_amount' });
+
+      const updated = await models.Players.addGdpBonus(targetId, amount);
+
+      logger.ok(`[Admin Moderação] Injetado bônus de $${amount} no PIB do jogador ${updated.username}`);
+
+      await models.AuditLog.log({
+        event: 'admin_bonus',
+        playerId: targetId,
+        username: updated.username,
+        gdp: Number(updated.gdp),
+        payload: { bonusAmount: amount, adminId: req.playerId, adminUser: req.username }
+      });
+
+      res.json({ ok: true, player: updated });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Ação de Moderação: Mudar Bloco Geopolítico
+  app.post('/api/admin/player/:id/bloc', authMiddleware, isAdmin, async (req, res) => {
+    try {
+      const targetId = Number(req.params.id);
+      const { blocId } = req.body;
+      await models.Players.changeBloc(targetId, blocId);
+
+      logger.info(`[Admin Moderação] Jogador ID#${targetId} transferido para Bloco ID#${blocId}`);
+
+      await models.AuditLog.log({
+        event: 'admin_change_bloc',
+        playerId: targetId,
+        payload: { newBlocId: blocId, adminId: req.playerId }
+      });
+
+      res.json({ ok: true, blocId });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Ação Live Ops: Pausar / Retomar IA Diretora
+  app.post('/api/admin/ai/toggle', authMiddleware, isAdmin, (_req, res) => {
+    if (!aiDirector) return res.status(400).json({ error: 'ai_director_unavailable' });
+    const state = aiDirector.togglePause();
+    res.json({ ok: true, state });
+  });
+
+  // Ação Live Ops: Ajustar Agressividade da IA Diretora
+  app.post('/api/admin/ai/aggression', authMiddleware, isAdmin, (req, res) => {
+    if (!aiDirector) return res.status(400).json({ error: 'ai_director_unavailable' });
+    const { multiplier } = req.body;
+    const state = aiDirector.setAggression(multiplier);
+    res.json({ ok: true, state });
+  });
+
+  app.get('/api/admin/ai/state', authMiddleware, isAdmin, (_req, res) => {
+    if (!aiDirector) return res.status(400).json({ error: 'ai_director_unavailable' });
+    res.json({ ok: true, state: aiDirector.getState() });
   });
 
   // ─── AI DIRECTOR LIVE SYNC ──────────────────────────
@@ -375,7 +565,7 @@ export function registerRoutes(app, db) {
     }
   });
 
-  // ─── AI DIRECTOR ─────────────────────────────────────
+  // ─── AI DIRECTOR FEED ────────────────────────────────
   app.get('/api/ai/feed', (_req, res) => {
     res.json({ events: aiDirector.getFeed(50) });
   });
@@ -384,6 +574,6 @@ export function registerRoutes(app, db) {
     res.json({ npcs: aiDirector.getNpcs() });
   });
 
-  logger.ok('Rotas REST registradas (com auditoria e Admin Dashboard)');
+  logger.ok('Rotas REST registradas (Central de Comando Live Ops & Moderação Ativa)');
   return { models, mm, aiDirector };
 }

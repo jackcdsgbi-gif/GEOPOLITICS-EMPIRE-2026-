@@ -3,18 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#090D16" />
-  <title>Painel de Controle Soberano — Dollar Doctrine Admin</title>
+  <meta name="theme-color" content="#060911" />
+  <title>Central de Comando Live Ops — Dollar Doctrine Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --bg-base: #060911;
-      --bg-surface: rgba(15, 23, 42, 0.75);
-      --bg-surface-hover: rgba(30, 41, 59, 0.85);
+      --bg-surface: rgba(15, 23, 42, 0.78);
+      --bg-surface-hover: rgba(30, 41, 59, 0.9);
       --border-subtle: rgba(255, 255, 255, 0.08);
-      --border-accent: rgba(56, 189, 248, 0.3);
+      --border-accent: rgba(56, 189, 248, 0.35);
       --text-primary: #F8FAFC;
       --text-secondary: #94A3B8;
       --text-muted: #64748B;
@@ -56,7 +57,7 @@
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid var(--border-subtle);
-      background: rgba(9, 13, 22, 0.85);
+      background: rgba(9, 13, 22, 0.88);
       backdrop-filter: blur(16px);
       position: sticky;
       top: 0;
@@ -70,14 +71,14 @@
     }
 
     .brand-badge {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
       background: linear-gradient(135deg, #0284C7, #0369A1);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
+      font-size: 22px;
       box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
       border: 1px solid rgba(255, 255, 255, 0.2);
     }
@@ -113,9 +114,9 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--accent-emerald);
-      font-weight: 600;
+      font-weight: 700;
       background: rgba(16, 185, 129, 0.1);
       padding: 6px 14px;
       border-radius: 20px;
@@ -170,11 +171,21 @@
       background: rgba(244, 63, 94, 0.22);
     }
 
+    .btn-accent {
+      background: linear-gradient(135deg, #0284C7, #0284C7);
+      color: #FFF;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+    }
+    .btn-accent:hover {
+      background: #0369A1;
+      transform: translateY(-1px);
+    }
+
     /* Container */
     main.admin-content {
       flex: 1;
       padding: 32px;
-      max-width: 1440px;
+      max-width: 1480px;
       margin: 0 auto;
       width: 100%;
       display: flex;
@@ -185,21 +196,19 @@
     /* KPI Grid */
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
     }
 
     .kpi-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: 16px;
-      padding: 22px 24px;
+      padding: 20px 22px;
       backdrop-filter: blur(12px);
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      position: relative;
-      overflow: hidden;
+      gap: 6px;
       transition: transform 0.2s ease, border-color 0.2s ease;
     }
 
@@ -209,8 +218,8 @@
     }
 
     .kpi-label {
-      font-size: 12px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--text-secondary);
@@ -220,7 +229,7 @@
     }
 
     .kpi-value {
-      font-size: 32px;
+      font-size: 30px;
       font-weight: 800;
       color: var(--text-primary);
       font-family: var(--font-mono);
@@ -232,7 +241,155 @@
       color: var(--text-muted);
     }
 
-    /* Two Columns Section */
+    /* BI Charts Section */
+    .bi-charts-grid {
+      display: grid;
+      grid-template-columns: 440px 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 1100px) {
+      .bi-charts-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 20px;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chart-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chart-body {
+      position: relative;
+      width: 100%;
+      height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Simulation Control Box */
+    .sim-card {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      border-radius: 18px;
+      padding: 22px 26px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .sim-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .sim-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+
+    .sim-title {
+      font-size: 17px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sim-badge {
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .sim-badge-running {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34D399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .sim-badge-paused {
+      background: rgba(244, 63, 94, 0.15);
+      color: #FDA4AF;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .sim-controls {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .slider-group label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 140px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-violet);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-violet);
+    }
+
+    /* Tables Grid */
     .dashboard-grid {
       display: grid;
       grid-template-columns: 420px 1fr;
@@ -256,7 +413,7 @@
     }
 
     .panel-header {
-      padding: 20px 24px;
+      padding: 18px 24px;
       border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
@@ -265,7 +422,7 @@
     }
 
     .panel-title {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
       display: flex;
       align-items: center;
@@ -277,18 +434,17 @@
       font-weight: 700;
       background: rgba(56, 189, 248, 0.15);
       color: var(--accent-cyan);
-      padding: 2px 8px;
+      padding: 3px 9px;
       border-radius: 12px;
     }
 
     .panel-body {
-      padding: 12px;
+      padding: 8px 12px;
       overflow-x: auto;
-      max-height: 540px;
+      max-height: 480px;
       overflow-y: auto;
     }
 
-    /* Tables */
     table.data-table {
       width: 100%;
       border-collapse: collapse;
@@ -321,17 +477,20 @@
       color: var(--text-primary);
     }
 
-    .country-tag {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .player-link {
+      color: var(--accent-cyan);
       font-weight: 600;
-      color: var(--text-primary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: all 0.2s;
     }
-
-    .flag-icon {
-      font-size: 18px;
-      line-height: 1;
+    .player-link:hover {
+      background: rgba(56, 189, 248, 0.15);
+      text-decoration: underline;
     }
 
     .progress-track {
@@ -339,7 +498,6 @@
       background: rgba(255, 255, 255, 0.08);
       border-radius: 3px;
       overflow: hidden;
-      position: relative;
       margin-top: 6px;
       width: 100%;
     }
@@ -353,7 +511,7 @@
     .badge-pill {
       display: inline-flex;
       align-items: center;
-      padding: 3px 10px;
+      padding: 3px 9px;
       border-radius: 6px;
       font-size: 11px;
       font-weight: 700;
@@ -375,16 +533,206 @@
       color: #FCD34D;
       border: 1px solid rgba(245, 158, 11, 0.3);
     }
+    .badge-admin {
+      background: rgba(139, 92, 246, 0.15);
+      color: #C084FC;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    .badge-banned {
+      background: rgba(244, 63, 94, 0.2);
+      color: #FDA4AF;
+      border: 1px solid rgba(244, 63, 94, 0.4);
+    }
 
     .mono {
       font-family: var(--font-mono);
     }
 
     .empty-state {
-      padding: 48px 24px;
+      padding: 40px 20px;
       text-align: center;
       color: var(--text-muted);
       font-size: 14px;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      padding: 20px;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-container {
+      background: #0B1120;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 20px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.15);
+      overflow: hidden;
+      transform: scale(0.95);
+      transition: transform 0.25s ease;
+    }
+
+    .modal-overlay.open .modal-container {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px;
+      border-radius: 6px;
+    }
+    .modal-close:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .profile-hero {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .profile-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+    }
+
+    .profile-main-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .stat-pill {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .stat-pill-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .stat-pill-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .mod-actions-box {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .mod-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .input-field {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      outline: none;
+      width: 160px;
+    }
+    .input-field:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .select-field {
+      background: #0F172A;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-family: var(--font-main);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .tech-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .tech-chip {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: var(--accent-cyan);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
     }
 
     /* Toast */
@@ -403,10 +751,9 @@
       opacity: 0;
       transform: translateY(12px);
       transition: all 0.3s ease;
-      z-index: 100;
+      z-index: 2000;
       pointer-events: none;
     }
-
     #toast.show {
       opacity: 1;
       transform: translateY(0);
@@ -421,14 +768,14 @@
       <div class="brand-badge">🛡️</div>
       <div class="brand-title">
         DOLLAR DOCTRINE
-        <span class="tag">Global Admin</span>
+        <span class="tag">Live Ops Admin</span>
       </div>
     </div>
 
     <div class="top-actions">
       <div class="live-indicator">
         <span class="live-dot"></span>
-        <span>AUDITORIA ATIVA</span>
+        <span>CENTRAL ATIVA</span>
       </div>
       <button id="btn-refresh" class="btn btn-secondary">
         <span>🔄</span> Atualizar
@@ -459,7 +806,7 @@
           <span>🌍</span>
         </div>
         <div id="kpi-total-countries" class="kpi-value">0</div>
-        <div class="kpi-sub">Territórios soberanos rastreados</div>
+        <div class="kpi-sub">Territórios soberanos mapeados</div>
       </div>
 
       <div class="kpi-card">
@@ -473,15 +820,76 @@
 
       <div class="kpi-card">
         <div class="kpi-label">
-          <span>Último Evento</span>
-          <span>⏱️</span>
+          <span>IA Diretora</span>
+          <span>🤖</span>
         </div>
-        <div id="kpi-last-event" class="kpi-value" style="font-size: 22px; padding-top: 6px;">—</div>
-        <div class="kpi-sub">Timestamp de atividade recente</div>
+        <div id="kpi-ai-status" class="kpi-value" style="font-size: 22px; padding-top: 4px; color: var(--accent-emerald);">Ativa</div>
+        <div id="kpi-ai-sub" class="kpi-sub">Agressividade: 1.0x (Normal)</div>
       </div>
     </section>
 
-    <!-- 2 Panels Grid -->
+    <!-- BI Charts Section (Chart.js) -->
+    <section class="bi-charts-grid">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">
+            <span>🍕</span>
+            <span>Distribuição de Jogadores por País</span>
+          </div>
+          <span class="panel-badge">GeoIP</span>
+        </div>
+        <div class="chart-body">
+          <canvas id="chart-countries"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="chart-title">
+            <span>📈</span>
+            <span>Volume de Sincronizações (Últimas 24 Horas)</span>
+          </div>
+          <span class="panel-badge">Atividade DAU</span>
+        </div>
+        <div class="chart-body">
+          <canvas id="chart-timeline"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Ops AI Director Control Box -->
+    <section class="sim-card">
+      <div class="sim-info">
+        <div class="sim-icon">🤖</div>
+        <div>
+          <div class="sim-title">
+            <span>Controle de Simulação Global (IA Diretora)</span>
+            <span id="sim-status-badge" class="sim-badge sim-badge-running">Em Execução</span>
+          </div>
+          <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
+            Gerencie o motor geopolítico autônomo, rebalanceamento rubber-banding e agressividade dos NPCs em tempo real.
+          </p>
+        </div>
+      </div>
+
+      <div class="sim-controls">
+        <div class="slider-group">
+          <label for="ai-slider">Agressividade:</label>
+          <input type="range" id="ai-slider" min="0.2" max="3.0" step="0.1" value="1.0" />
+          <span id="ai-slider-val" class="mono" style="font-size: 13px; font-weight: 700; color: var(--accent-violet);">1.0x</span>
+        </div>
+
+        <button id="btn-apply-ai" class="btn btn-secondary">
+          <span>⚙️</span> Aplicar Agressividade
+        </button>
+
+        <button id="btn-toggle-ai" class="btn btn-secondary">
+          <span>⏸️</span> Pausar IA
+        </button>
+      </div>
+    </section>
+
+    <!-- 2 Panels Grid (Tables) -->
     <section class="dashboard-grid">
 
       <!-- Country Breakdown -->
@@ -512,14 +920,14 @@
         </div>
       </div>
 
-      <!-- Real-Time Progress -->
+      <!-- Real-Time Progress with Clickable Players -->
       <div class="panel-card">
         <div class="panel-header">
           <div class="panel-title">
             <span>⚡</span>
             <span>Últimos 20 Registros de Progresso</span>
           </div>
-          <span class="panel-badge">Ao Vivo</span>
+          <span class="panel-badge">Clique no nome para Moderação</span>
         </div>
         <div class="panel-body">
           <table class="data-table">
@@ -544,6 +952,144 @@
 
     </section>
   </main>
+
+  <!-- Modal: Perfil Detalhado & Moderação -->
+  <div id="player-modal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">👤</span>
+          <h3 id="modal-player-title" style="font-size: 17px; font-weight: 700;">Perfil do Jogador</h3>
+        </div>
+        <button id="btn-modal-close" class="modal-close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Hero info -->
+        <div class="profile-hero">
+          <div id="modal-avatar" class="profile-avatar">🌐</div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="modal-username" style="font-size: 20px; font-weight: 800; color: #FFF;">—</span>
+              <span id="modal-role-badge" class="badge-pill badge-sync">PLAYER</span>
+              <span id="modal-ban-badge" class="badge-pill badge-banned" style="display: none;">🚫 BANIDO</span>
+            </div>
+            <div style="font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 10px;">
+              <span id="modal-nation">—</span>
+              <span>•</span>
+              <span id="modal-continent-badge" style="color: var(--accent-amber); font-weight: 600;">🌾 +5% Agro</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Stat Pills -->
+        <div class="profile-main-stats">
+          <div class="stat-pill">
+            <span class="stat-pill-label">PIB Atual</span>
+            <span id="modal-gdp" class="stat-pill-val mono" style="color: var(--accent-emerald);">$0</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-pill-label">Nível</span>
+            <span id="modal-level" class="stat-pill-val mono">0</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-pill-label">Rating ELO</span>
+            <span id="modal-rating" class="stat-pill-val mono" style="color: var(--accent-cyan);">1000</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-pill-label">Bloco</span>
+            <span id="modal-bloc" class="stat-pill-val" style="font-size: 14px;">Sem Aliança</span>
+          </div>
+        </div>
+
+        <!-- Moderation Actions -->
+        <div class="mod-actions-box">
+          <h4 style="font-size: 14px; font-weight: 700; color: var(--accent-cyan); display: flex; align-items: center; gap: 6px;">
+            <span>🛡️</span> Ações de Moderação
+          </h4>
+
+          <!-- Ban row -->
+          <div class="mod-row">
+            <div>
+              <div style="font-size: 13px; font-weight: 600;">Acesso à Plataforma</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Desconecta o socket imediatamente e bloqueia logins</div>
+            </div>
+            <button id="btn-toggle-ban" class="btn btn-danger">
+              <span>🚫</span> Banir Jogador
+            </button>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.06);" />
+
+          <!-- Bonus Injection row -->
+          <div class="mod-row">
+            <div>
+              <div style="font-size: 13px; font-weight: 600;">Injetar Bônus de PIB</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Adiciona saldo direto na conta do jogador</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="input-bonus-amount" class="input-field" placeholder="Ex: 50000000" min="1" />
+              <button id="btn-give-bonus" class="btn btn-accent">
+                <span>💰</span> Injetar
+              </button>
+            </div>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.06);" />
+
+          <!-- Change Bloc row -->
+          <div class="mod-row">
+            <div>
+              <div style="font-size: 13px; font-weight: 600;">Mudar Bloco Geopolítico</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Transfere a afiliação diplomática do jogador</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <select id="select-bloc" class="select-field">
+                <option value="">Sem Bloco (Neutro)</option>
+              </select>
+              <button id="btn-change-bloc" class="btn btn-secondary">
+                <span>🤝</span> Transferir
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Techs researched -->
+        <div>
+          <h4 style="font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase;">
+            Tecnologias Desbloqueadas (<span id="modal-tech-count">0</span>)
+          </h4>
+          <div id="modal-tech-list" class="tech-chips">
+            <span style="font-size: 12px; color: var(--text-muted);">Nenhuma tecnologia pesquisada ainda.</span>
+          </div>
+        </div>
+
+        <!-- Recent Audit Logs for this player -->
+        <div>
+          <h4 style="font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase;">
+            Últimos 10 Logs deste Jogador
+          </h4>
+          <div style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: 10px;">
+            <table class="data-table" style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th>Horário</th>
+                  <th>Evento</th>
+                  <th>País</th>
+                  <th>PIB</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody id="modal-player-logs">
+                <tr><td colspan="5" class="empty-state">Sem histórico</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
   <div id="toast">Notificação</div>
 
@@ -604,22 +1150,123 @@
       const el = document.getElementById('toast');
       el.textContent = msg;
       el.classList.add('show');
-      setTimeout(() => el.classList.remove('show'), 2500);
+      setTimeout(() => el.classList.remove('show'), 2800);
     }
 
-    // Validação estrita de credenciais
+    // Token Auth check
     const token = localStorage.getItem('dd_token');
     if (!token) {
       console.warn('Token não encontrado. Redirecionando...');
       window.location.replace('/');
     }
 
+    let chartCountriesInstance = null;
+    let chartTimelineInstance = null;
+    let selectedPlayerId = null;
+    let selectedPlayerIsBanned = false;
+    let availableBlocsCache = [];
+
+    // Chart.js Setup
+    function initCharts(chartData) {
+      // 1. Doughnut Chart (Countries)
+      const ctxCountry = document.getElementById('chart-countries');
+      if (ctxCountry && chartData?.countryDistribution) {
+        const labels = chartData.countryDistribution.map(c => `${getCountryInfo(c.country).flag} ${c.country}`);
+        const dataValues = chartData.countryDistribution.map(c => Number(c.accesses || 0));
+
+        if (chartCountriesInstance) {
+          chartCountriesInstance.data.labels = labels;
+          chartCountriesInstance.data.datasets[0].data = dataValues;
+          chartCountriesInstance.update();
+        } else {
+          chartCountriesInstance = new Chart(ctxCountry, {
+            type: 'doughnut',
+            data: {
+              labels,
+              datasets: [{
+                data: dataValues,
+                backgroundColor: [
+                  '#38BDF8', '#10B981', '#F59E0B', '#8B5CF6',
+                  '#F43F5E', '#06B6D4', '#EC4899', '#64748B'
+                ],
+                borderWidth: 2,
+                borderColor: '#0B1120'
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'right',
+                  labels: { color: '#94A3B8', font: { family: 'Outfit', size: 12 } }
+                }
+              }
+            }
+          });
+        }
+      }
+
+      // 2. Line Chart (Sync Timeline 24h)
+      const ctxTimeline = document.getElementById('chart-timeline');
+      if (ctxTimeline && chartData?.syncTimeline) {
+        const labels = chartData.syncTimeline.labels;
+        const dataPoints = chartData.syncTimeline.data;
+
+        if (chartTimelineInstance) {
+          chartTimelineInstance.data.labels = labels;
+          chartTimelineInstance.data.datasets[0].data = dataPoints;
+          chartTimelineInstance.update();
+        } else {
+          const gradient = ctxTimeline.getContext('2d').createLinearGradient(0, 0, 0, 220);
+          gradient.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
+          gradient.addColorStop(1, 'rgba(56, 189, 248, 0.0)');
+
+          chartTimelineInstance = new Chart(ctxTimeline, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Sincronizações (SYNC)',
+                data: dataPoints,
+                borderColor: '#38BDF8',
+                borderWidth: 2.5,
+                backgroundColor: gradient,
+                fill: true,
+                tension: 0.35,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#38BDF8'
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                  ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 11 } }
+                },
+                y: {
+                  beginAtZero: true,
+                  grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                  ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 11 } }
+                }
+              },
+              plugins: {
+                legend: { display: false }
+              }
+            }
+          });
+        }
+      }
+    }
+
+    // Fetch Dashboard Data
     async function fetchDashboard() {
       try {
         const res = await fetch('/api/admin/dashboard', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+          headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (res.status === 401 || res.status === 403) {
@@ -628,15 +1275,13 @@
           return;
         }
 
-        if (!res.ok) {
-          throw new Error('Falha ao obter dados do dashboard');
-        }
+        if (!res.ok) throw new Error('Falha ao obter dados do dashboard');
 
         const data = await res.json();
         renderDashboard(data.stats);
       } catch (err) {
         console.error(err);
-        showToast('Erro ao atualizar: ' + err.message);
+        showToast('Erro ao sincronizar: ' + err.message);
       }
     }
 
@@ -646,6 +1291,7 @@
       const byCountry = stats.byCountry || [];
       const recent = stats.recentProgress || [];
       const totals = stats.totals || {};
+      const aiState = stats.aiState || {};
 
       // 1. KPIs
       document.getElementById('kpi-total-logs').textContent = totals.totalLogs?.toLocaleString('pt-BR') || '0';
@@ -655,24 +1301,51 @@
         const top = byCountry[0];
         const topInfo = getCountryInfo(top.country);
         document.getElementById('kpi-top-country').textContent = `${topInfo.flag} ${top.country}`;
-        document.getElementById('kpi-top-country-sub').textContent = `${Number(top.total_accesses).toLocaleString('pt-BR')} requisições (${topInfo.name})`;
+        document.getElementById('kpi-top-country-sub').textContent = `${Number(top.total_accesses).toLocaleString('pt-BR')} conexões (${topInfo.name})`;
       } else {
         document.getElementById('kpi-top-country').textContent = '—';
       }
 
-      if (recent.length > 0) {
-        document.getElementById('kpi-last-event').textContent = timeAgo(recent[0].created_at);
+      // AI KPI & Controls State
+      const aiKpi = document.getElementById('kpi-ai-status');
+      const aiSub = document.getElementById('kpi-ai-sub');
+      const simBadge = document.getElementById('sim-status-badge');
+      const btnToggleAi = document.getElementById('btn-toggle-ai');
+      const sliderVal = document.getElementById('ai-slider-val');
+      const slider = document.getElementById('ai-slider');
+
+      if (aiState.isPaused) {
+        aiKpi.textContent = 'Pausada';
+        aiKpi.style.color = 'var(--accent-rose)';
+        simBadge.className = 'sim-badge sim-badge-paused';
+        simBadge.textContent = 'Pausada';
+        btnToggleAi.innerHTML = '<span>▶️</span> Retomar IA';
+      } else {
+        aiKpi.textContent = 'Ativa';
+        aiKpi.style.color = 'var(--accent-emerald)';
+        simBadge.className = 'sim-badge sim-badge-running';
+        simBadge.textContent = 'Em Execução';
+        btnToggleAi.innerHTML = '<span>⏸️</span> Pausar IA';
       }
 
-      // 2. Tabela de Países
+      const aggression = aiState.aggression || 1.0;
+      aiSub.textContent = `Agressividade: ${aggression.toFixed(1)}x`;
+      sliderVal.textContent = `${aggression.toFixed(1)}x`;
+      slider.value = aggression;
+
+      // 2. Charts
+      if (stats.chartData) {
+        initCharts(stats.chartData);
+      }
+
+      // 3. Tabela de Países
       document.getElementById('country-count-badge').textContent = `${byCountry.length} países`;
       const countryTbody = document.getElementById('country-table-body');
-
       let grandTotal = byCountry.reduce((acc, row) => acc + Number(row.total_accesses || 0), 0);
       if (grandTotal === 0) grandTotal = 1;
 
       if (byCountry.length === 0) {
-        countryTbody.innerHTML = '<tr><td colspan="4" class="empty-state">Nenhum registro geográfico computado ainda.</td></tr>';
+        countryTbody.innerHTML = '<tr><td colspan="4" class="empty-state">Nenhum registro geográfico computado.</td></tr>';
       } else {
         countryTbody.innerHTML = byCountry.map(row => {
           const info = getCountryInfo(row.country);
@@ -682,8 +1355,8 @@
           return `
             <tr>
               <td>
-                <div class="country-tag">
-                  <span class="flag-icon">${info.flag}</span>
+                <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: #FFF;">
+                  <span style="font-size: 18px;">${info.flag}</span>
                   <span>${info.name}</span>
                   <span style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">(${row.country})</span>
                 </div>
@@ -691,9 +1364,7 @@
               <td class="mono" style="font-weight: 700; color: #F8FAFC;">${accesses.toLocaleString('pt-BR')}</td>
               <td class="mono">${Number(row.unique_players || 0).toLocaleString('pt-BR')}</td>
               <td style="min-width: 110px;">
-                <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--font-mono);">
-                  <span>${pct}%</span>
-                </div>
+                <div style="font-size: 11px; font-family: var(--font-mono);">${pct}%</div>
                 <div class="progress-track">
                   <div class="progress-fill" style="width: ${pct}%;"></div>
                 </div>
@@ -703,7 +1374,7 @@
         }).join('');
       }
 
-      // 3. Tabela de Progresso Recente
+      // 4. Tabela de Progresso Recente (Nomes Clicáveis)
       const progTbody = document.getElementById('progress-table-body');
       if (recent.length === 0) {
         progTbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nenhum evento registrado ainda.</td></tr>';
@@ -724,9 +1395,14 @@
           return `
             <tr>
               <td class="mono" style="font-size: 12px; color: var(--text-muted);">${timeAgo(r.created_at)}</td>
-              <td style="font-weight: 600; color: #F8FAFC;">${r.username || ('ID#' + r.player_id)}</td>
               <td>
-                <span class="flag-icon" title="${info.name}">${info.flag}</span>
+                <span class="player-link" onclick="openPlayerModal(${r.player_id}, '${r.username || ''}')">
+                  <span>👤</span>
+                  <span>${r.username || ('ID#' + r.player_id)}</span>
+                </span>
+              </td>
+              <td>
+                <span title="${info.name}">${info.flag}</span>
                 <span class="mono" style="font-size: 12px; margin-left: 4px;">${r.country || 'XX'}</span>
               </td>
               <td><span class="badge-pill" style="background: rgba(255,255,255,0.06);">Nv. ${r.level || 0}</span></td>
@@ -738,9 +1414,233 @@
       }
     }
 
+    // Modal Details & Moderation
+    window.openPlayerModal = async function(id, username) {
+      selectedPlayerId = id;
+      document.getElementById('player-modal').classList.add('open');
+
+      document.getElementById('modal-username').textContent = username || `ID #${id}`;
+      document.getElementById('modal-player-title').textContent = `Moderação: ${username || `ID #${id}`}`;
+
+      try {
+        const res = await fetch(`/api/admin/player/${id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Não foi possível carregar os detalhes do jogador.');
+        const data = await res.json();
+        const p = data.profile.player;
+        const bloc = data.profile.bloc;
+        const techs = data.profile.technologies || [];
+        const logs = data.profile.auditLogs || [];
+        availableBlocsCache = data.profile.availableBlocs || [];
+
+        selectedPlayerIsBanned = !!p.is_banned;
+
+        // Render Hero
+        document.getElementById('modal-avatar').textContent = p.nation_emoji || '🌐';
+        document.getElementById('modal-username').textContent = p.username;
+        document.getElementById('modal-nation').textContent = p.nation_name || 'Nação Soberana';
+
+        const roleBadge = document.getElementById('modal-role-badge');
+        roleBadge.textContent = p.role ? p.role.toUpperCase() : 'PLAYER';
+        roleBadge.className = p.role === 'admin' ? 'badge-pill badge-admin' : 'badge-pill badge-sync';
+
+        const banBadge = document.getElementById('modal-ban-badge');
+        banBadge.style.display = selectedPlayerIsBanned ? 'inline-flex' : 'none';
+
+        const btnBan = document.getElementById('btn-toggle-ban');
+        if (selectedPlayerIsBanned) {
+          btnBan.className = 'btn btn-secondary';
+          btnBan.innerHTML = '<span>✅</span> Desbanir Jogador';
+        } else {
+          btnBan.className = 'btn btn-danger';
+          btnBan.innerHTML = '<span>🚫</span> Banir Jogador';
+        }
+
+        const continentBadge = document.getElementById('modal-continent-badge');
+        const contInfo = data.profile.continentalBonus || { label: 'América do Sul' };
+        continentBadge.textContent = `${p.continent || 'South America'}: ${contInfo.label || ''}`;
+
+        // Stat pills
+        document.getElementById('modal-gdp').textContent = fmtMoney(p.gdp);
+        document.getElementById('modal-level').textContent = p.level || 0;
+        document.getElementById('modal-rating').textContent = p.rating || 1000;
+        document.getElementById('modal-bloc').textContent = bloc ? `${bloc.emoji} ${bloc.name}` : 'Sem Aliança';
+
+        // Select bloc options
+        const selBloc = document.getElementById('select-bloc');
+        selBloc.innerHTML = '<option value="">Sem Bloco (Neutro)</option>' +
+          availableBlocsCache.map(b => `<option value="${b.id}" ${p.bloc_id === b.id ? 'selected' : ''}>${b.emoji} ${b.name}</option>`).join('');
+
+        // Techs
+        document.getElementById('modal-tech-count').textContent = techs.length;
+        const techList = document.getElementById('modal-tech-list');
+        if (techs.length === 0) {
+          techList.innerHTML = '<span style="font-size: 12px; color: var(--text-muted);">Nenhuma tecnologia pesquisada ainda.</span>';
+        } else {
+          techList.innerHTML = techs.map(t => `<span class="tech-chip">🔬 ${t.name || t.id || t}</span>`).join('');
+        }
+
+        // Recent logs
+        const logsTbody = document.getElementById('modal-player-logs');
+        if (logs.length === 0) {
+          logsTbody.innerHTML = '<tr><td colspan="5" class="empty-state">Sem histórico para este jogador.</td></tr>';
+        } else {
+          logsTbody.innerHTML = logs.map(l => {
+            const info = getCountryInfo(l.country);
+            return `
+              <tr>
+                <td class="mono">${timeAgo(l.created_at)}</td>
+                <td><span class="badge-pill badge-sync">${(l.event || 'sync').toUpperCase()}</span></td>
+                <td>${info.flag} ${l.country || 'XX'}</td>
+                <td class="mono" style="color: var(--accent-emerald);">${fmtMoney(l.gdp)}</td>
+                <td class="mono" style="font-size: 11px; color: var(--text-muted);">${l.ip || '—'}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (e) {
+        showToast('Erro ao carregar jogador: ' + e.message);
+      }
+    };
+
+    function closeModal() {
+      document.getElementById('player-modal').classList.remove('open');
+      selectedPlayerId = null;
+    }
+
+    document.getElementById('btn-modal-close').addEventListener('click', closeModal);
+    document.getElementById('player-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'player-modal') closeModal();
+    });
+
+    // Moderação: Toggle Ban
+    document.getElementById('btn-toggle-ban').addEventListener('click', async () => {
+      if (!selectedPlayerId) return;
+      const targetState = !selectedPlayerIsBanned;
+      const confirmMsg = targetState
+        ? 'Tem certeza de que deseja BANIR este jogador? Ele será desconectado imediatamente.'
+        : 'Deseja remover o banimento deste jogador?';
+      if (!confirm(confirmMsg)) return;
+
+      try {
+        const res = await fetch(`/api/admin/player/${selectedPlayerId}/ban`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ ban: targetState })
+        });
+        if (!res.ok) throw new Error('Falha ao atualizar banimento.');
+        showToast(targetState ? '🚫 Jogador banido com sucesso!' : '✅ Jogador desbanido com sucesso!');
+        openPlayerModal(selectedPlayerId);
+        fetchDashboard();
+      } catch (err) {
+        showToast('Erro: ' + err.message);
+      }
+    });
+
+    // Moderação: Injetar Bônus
+    document.getElementById('btn-give-bonus').addEventListener('click', async () => {
+      if (!selectedPlayerId) return;
+      const input = document.getElementById('input-bonus-amount');
+      const amount = Number(input.value);
+      if (!amount || amount <= 0) {
+        alert('Informe um valor de bônus válido.');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/admin/player/${selectedPlayerId}/bonus`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ amount })
+        });
+        if (!res.ok) throw new Error('Falha ao injetar bônus.');
+        showToast(`💰 Bônus de ${fmtMoney(amount)} injetado!`);
+        input.value = '';
+        openPlayerModal(selectedPlayerId);
+        fetchDashboard();
+      } catch (err) {
+        showToast('Erro: ' + err.message);
+      }
+    });
+
+    // Moderação: Mudar Bloco
+    document.getElementById('btn-change-bloc').addEventListener('click', async () => {
+      if (!selectedPlayerId) return;
+      const select = document.getElementById('select-bloc');
+      const blocId = select.value ? Number(select.value) : null;
+
+      try {
+        const res = await fetch(`/api/admin/player/${selectedPlayerId}/bloc`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ blocId })
+        });
+        if (!res.ok) throw new Error('Falha ao transferir bloco.');
+        showToast('🤝 Aliança geopolítica atualizada!');
+        openPlayerModal(selectedPlayerId);
+        fetchDashboard();
+      } catch (err) {
+        showToast('Erro: ' + err.message);
+      }
+    });
+
+    // Live Ops: Slider e Controle da IA
+    const slider = document.getElementById('ai-slider');
+    const sliderVal = document.getElementById('ai-slider-val');
+    slider.addEventListener('input', () => {
+      sliderVal.textContent = `${Number(slider.value).toFixed(1)}x`;
+    });
+
+    document.getElementById('btn-apply-ai').addEventListener('click', async () => {
+      const multiplier = Number(slider.value);
+      try {
+        const res = await fetch('/api/admin/ai/aggression', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ multiplier })
+        });
+        if (!res.ok) throw new Error('Falha ao alterar agressividade da IA.');
+        showToast(`⚔️ Agressividade dos NPCs definida para ${multiplier.toFixed(1)}x`);
+        fetchDashboard();
+      } catch (err) {
+        showToast('Erro: ' + err.message);
+      }
+    });
+
+    document.getElementById('btn-toggle-ai').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/admin/ai/toggle', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) throw new Error('Falha ao pausar/retomar simulação da IA.');
+        const data = await res.json();
+        showToast(data.state.isPaused ? '⏸️ Simulação da IA Pausada!' : '▶️ Simulação da IA Retomada!');
+        fetchDashboard();
+      } catch (err) {
+        showToast('Erro: ' + err.message);
+      }
+    });
+
     document.getElementById('btn-refresh').addEventListener('click', () => {
       fetchDashboard();
-      showToast('Dados atualizados com sucesso');
+      showToast('Central de Comando atualizada');
     });
 
     document.getElementById('btn-return').addEventListener('click', () => {

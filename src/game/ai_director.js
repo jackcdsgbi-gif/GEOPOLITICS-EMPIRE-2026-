@@ -87,6 +87,8 @@ export class AiDirector {
     this.npcs = new Map();
     this.eventHistory = [];
     this.tickInterval = null;
+    this.isPaused = false;
+    this.aggressionMultiplier = 1.0;
     this._initNpcs();
   }
 
@@ -297,6 +299,7 @@ export class AiDirector {
     if (this.tickInterval) return;
     this.rebalanceRubberBanding();
     this.tickInterval = setInterval(() => {
+      if (this.isPaused) return;
       this.rebalanceRubberBanding();
       this.generateAutonomousAction();
     }, intervalMs);
@@ -308,6 +311,28 @@ export class AiDirector {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+  }
+
+  togglePause() {
+    this.isPaused = !this.isPaused;
+    logger.info(`[AI Director] Simulação ${this.isPaused ? 'PAUSADA' : 'RETOMADA'}`);
+    return this.getState();
+  }
+
+  setAggression(multiplier) {
+    const val = Math.max(0.1, Math.min(3.0, Number(multiplier) || 1.0));
+    this.aggressionMultiplier = Number(val.toFixed(2));
+    logger.info(`[AI Director] Agressividade alterada para ${this.aggressionMultiplier}x`);
+    return this.getState();
+  }
+
+  getState() {
+    return {
+      isPaused: this.isPaused,
+      aggression: this.aggressionMultiplier,
+      npcCount: this.npcs.size,
+      eventsCount: this.eventHistory.length
+    };
   }
 
   getNpcs() {

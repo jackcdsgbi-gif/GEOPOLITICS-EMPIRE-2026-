@@ -33,6 +33,7 @@ export function createModels(db) {
       const res = await raw.query('SELECT * FROM players WHERE username = $1', [username]);
       const row = res.rows[0];
       if (!row) throw new Error('invalid_credentials');
+      if (row.is_banned) throw new Error('account_banned');
       if (!verifyPassword(password, row.password_hash)) throw new Error('invalid_credentials');
 
       await raw.query('UPDATE players SET last_seen = $1 WHERE id = $2', [Date.now(), row.id]);
@@ -56,8 +57,77 @@ export function createModels(db) {
       const { password_hash, state_json, ...safe } = row;
       return {
         ...safe,
-        role: row.role || 'player'
+        role: row.role || 'player',
+        is_banned: !!row.is_banned,
+        continent: row.continent || 'South America'
       };
+    },
+
+    async getProfileWithAudit(id) {
+      if (!id) return null;
+      const playerRes = await raw.query('SELECT * FROM players WHERE id = $1', [Number(id)]);
+      const player = playerRes.rows[0];
+      if (!player) return null;
+
+      let bloc = null;
+      if (player.bloc_id) {
+        const blocRes = await raw.query('SELECT id, name, emoji, doctrine, color, power FROM blocs WHERE id = $1', [player.bloc_id]);
+        bloc = blocRes.rows[0] || null;
+      }
+
+      let parsedState = {};
+      try {
+        parsedState = typeof player.state_json === 'string' ? JSON.parse(player.state_json) : (player.state_json || {});
+      } catch (e) {
+        parsedState = {};
+      }
+
+      const logsRes = await raw.query(`
+        SELECT id, event, country, ip, level, gdp, payload, created_at
+        FROM audit_log
+        WHERE player_id = $1
+        ORDER BY created_at DESC
+        LIMIT 10
+      `, [Number(id)]);
+
+      return {
+        player: this.public(player),
+        bloc,
+        technologies: parsedState.technologies || parsedState.unlockedTechs || parsedState.techs || [],
+        districts: parsedState.unlockedDistricts || [],
+        auditLogs: logsRes.rows
+      };
+    },
+
+    async setBan(id, isBanned) {
+      await raw.query('UPDATE players SET is_banned = $1 WHERE id = $2', [Boolean(isBanned), Number(id)]);
+      return { ok: true, is_banned: Boolean(isBanned) };
+    },
+
+    async addGdpBonus(id, amount) {
+      const bonus = Math.max(0, Number(amount) || 0);
+      const res = await raw.query(`
+        UPDATE players
+        SET gdp = gdp + $1,
+            peak_gdp = GREATEST(peak_gdp, gdp + $1),
+            total_earned = total_earned + $1
+        WHERE id = $2
+        RETURNING id, username, gdp, peak_gdp
+      `, [bonus, Number(id)]);
+      return res.rows[0];
+    },
+
+    async changeBloc(id, newBlocId) {
+      const bId = newBlocId ? Number(newBlocId) : null;
+      await raw.query('UPDATE players SET bloc_id = $1, bloc_role = $2 WHERE id = $3', [bId, 'member', Number(id)]);
+      if (bId) {
+        await Blocs.recomputePower(bId);
+      }
+      return { ok: true, bloc_id: bId };
+    },
+
+    async updateContinent(id, continent) {
+      await raw.query('UPDATE players SET continent = $1 WHERE id = $2', [continent, Number(id)]);
     },
 
     async updateState(id, patch) {
@@ -343,6 +413,51 @@ export function createModels(db) {
         totalLogs: Number(totalLogsRes.rows[0]?.c || 0),
         totalCountries: Number(totalCountriesRes.rows[0]?.c || 0)
       };
+    },
+
+    async getSyncTimeline24h() {
+      const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+      const res = await raw.query(`
+        SELECT
+          EXTRACT(HOUR FROM TO_TIMESTAMP(created_at / 1000))::INTEGER AS hour,
+          COUNT(*) AS count
+        FROM audit_log
+        WHERE event = 'sync' AND created_at >= $1
+        GROUP BY hour
+        ORDER BY hour ASC
+      `, [sinceMs]);
+
+      const hourMap = {};
+      for (let h = 0; h < 24; h++) hourMap[h] = 0;
+      for (const r of res.rows) {
+        hourMap[Number(r.hour)] = Number(r.count || 0);
+      }
+
+      const currentHour = new Date().getUTCHours();
+      const labels = [];
+      const data = [];
+      for (let i = 23; i >= 0; i--) {
+        const h = (currentHour - i + 24) % 24;
+        labels.push(`${String(h).padStart(2, '0')}h`);
+        data.push(hourMap[h] || 0);
+      }
+
+      return { labels, data };
+    },
+
+    async getCountryDistribution() {
+      const res = await raw.query(`
+        SELECT
+          country,
+          COUNT(DISTINCT player_id) AS players,
+          COUNT(*) AS accesses
+        FROM audit_log
+        WHERE country IS NOT NULL AND country != ''
+        GROUP BY country
+        ORDER BY accesses DESC
+        LIMIT 8
+      `);
+      return res.rows;
     }
   };
 

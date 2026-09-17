@@ -60,17 +60,22 @@ export async function initDb() {
         season_id INTEGER DEFAULT 1,
         state_json TEXT DEFAULT '{}',
         flags INTEGER DEFAULT 0,
-        pvp_blocked_until BIGINT DEFAULT 0
+        pvp_blocked_until BIGINT DEFAULT 0,
+        is_banned BOOLEAN DEFAULT false,
+        continent VARCHAR(30) DEFAULT 'South America'
       );
 
       ALTER TABLE players ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'player';
       ALTER TABLE players ADD COLUMN IF NOT EXISTS email VARCHAR(100);
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT false;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS continent VARCHAR(30) DEFAULT 'South America';
 
       CREATE INDEX IF NOT EXISTS idx_players_rating ON players(rating DESC);
       CREATE INDEX IF NOT EXISTS idx_players_bloc ON players(bloc_id);
       CREATE INDEX IF NOT EXISTS idx_players_gdp ON players(gdp DESC);
       CREATE INDEX IF NOT EXISTS idx_players_peak ON players(peak_gdp DESC);
       CREATE INDEX IF NOT EXISTS idx_players_role ON players(role);
+      CREATE INDEX IF NOT EXISTS idx_players_banned ON players(is_banned);
 
       CREATE TABLE IF NOT EXISTS blocs (
         id SERIAL PRIMARY KEY,
